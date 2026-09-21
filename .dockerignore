@@ -1,0 +1,29 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Next / tooling
+.next
+out
+coverage
+*.tsbuildinfo
+next-env.d.ts
+
+# Env & local data (never bake secrets into image)
+.env
+.env.*
+!.env.example
+!.env.production.example
+.data
+
+# Git / IDE / docs noise
+.git
+.github
+.vscode
+.cursor
+*.md
+!DEPLOY.md
+agent-transcripts
+
+# Local compose MySQL data
+docker-compose.yml
