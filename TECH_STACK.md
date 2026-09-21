@@ -197,6 +197,8 @@ Duet 新增：
 4. 发布流程执行 `prisma migrate deploy`。  
 5. 图片走 **腾讯云 COS**（与容器文件系统解耦，便于换机）。
 
+详细步骤见 **[DEPLOY.md](./DEPLOY.md)**（Dockerfile、`docker-compose.prod.yml`、Nginx 示例）。
+
 Redis：需要时再在 compose 中挂 `REDIS_URL`；V1 默认可不配。
 
 ---

@@ -1,26 +1,27 @@
-# 生产部署：应用容器（复用服务器已有 MySQL，不要把 3306 暴露给公网）
+# 生产部署：应用容器
+# 宿主机 MySQL：DATABASE_URL 使用 host.docker.internal:3306
 #
-# 用法：
-#   1. 复制 .env.production.example → .env.production 并填写
-#   2. 确认 external network 名称与服务器上 MySQL 所在网络一致（见 DEPLOY.md）
-#   3. docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#   cp .env.production.example .env.production  # 填写后
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 
 services:
   duet:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
     image: duet-web:latest
     container_name: duet-web
     restart: unless-stopped
     env_file:
       - .env.production
     ports:
-      # 仅本机 / 内网可访问；公网走 Nginx
-      - "127.0.0.1:3000:3000"
+      # 3010：宿主机 3000 常被其他 Node 占用；Nginx 反代至此
+      - "127.0.0.1:3010:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     mem_limit: 512m
-    networks:
-      - duet_net
     healthcheck:
       test:
         [
@@ -32,10 +33,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 40s
-
-networks:
-  # 与现有 MySQL 容器同一 Docker 网络；名称按服务器实际修改
-  duet_net:
-    external: true
-    name: ${DOCKER_NETWORK:-bridge}
+      start_period: 60s

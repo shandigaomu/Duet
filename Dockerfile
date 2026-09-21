@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# Duet 生产镜像：Next.js standalone + 启动时 prisma migrate
 
 FROM node:20-bookworm-slim AS base
 ENV PNPM_HOME="/pnpm"
@@ -18,9 +19,19 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+ARG NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-RUN pnpm exec prisma generate && pnpm build
+ENV DATABASE_URL="mysql://duet:duet@127.0.0.1:3306/duet"
+
+RUN pnpm exec prisma generate && pnpm build \
+  && mkdir -p /app/prisma-export/.prisma /app/prisma-export/@prisma \
+  && CLIENT_DOT=$(find /app/node_modules -type d -path "*/.prisma/client" | head -1) \
+  && cp -a "$(dirname "$CLIENT_DOT")/." /app/prisma-export/.prisma/ \
+  && CLIENT_PKG=$(find /app/node_modules -type d -path "*/node_modules/@prisma/client" | head -1) \
+  && cp -a "$CLIENT_PKG/." /app/prisma-export/@prisma/client/
 
 FROM base AS runner
 WORKDIR /app
@@ -37,6 +48,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+
+# 覆盖/补齐 Prisma Client（pnpm 嵌套路径在 standalone 里常不完整）
+RUN rm -rf ./node_modules/.prisma ./node_modules/@prisma/client \
+  && mkdir -p ./node_modules/.prisma ./node_modules/@prisma/client
+COPY --from=builder --chown=nextjs:nodejs /app/prisma-export/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/prisma-export/@prisma/client ./node_modules/@prisma/client
 
 COPY --chown=nextjs:nodejs scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
