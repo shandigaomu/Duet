@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// —— Better Auth ——
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  memberships   SpaceMember[]
+  checkIns      CheckIn[]
+  entries       Entry[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// —— Duet 业务 ——
+model Space {
+  id        String        @id @default(cuid())
+  inviteCode String       @unique @db.VarChar(12)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  members   SpaceMember[]
+  checkIns  CheckIn[]
+  entries   Entry[]
+
+  @@map("space")
+}
+
+model SpaceMember {
+  id        String   @id @default(cuid())
+  spaceId   String
+  userId    String
+  nickname  String   @db.VarChar(40)
+  avatarUrl String?  @db.VarChar(512)
+  joinedAt  DateTime @default(now())
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+  @@unique([userId]) // V1：一用户仅一个空间
+  @@map("space_member")
+}
+
+model CheckIn {
+  id            String    @id @default(cuid())
+  spaceId       String
+  authorId      String
+  /// Asia/Shanghai 自然日 YYYY-MM-DD
+  day           String    @db.Char(10)
+  mood          String?   @db.VarChar(16) // happy | ok | sad
+  line          String    @db.VarChar(60)
+  note          String?   @db.VarChar(200)
+  imageUrl      String?   @db.VarChar(512)
+  /// 对方已读时间
+  partnerReadAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  space         Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author        User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, authorId, day])
+  @@index([spaceId, day])
+  @@map("check_in")
+}
+
+model Entry {
+  id        String       @id @default(cuid())
+  spaceId   String
+  authorId  String
+  day       String       @db.Char(10)
+  title     String?      @db.VarChar(120)
+  body      String       @db.Text
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  space     Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  images    EntryImage[]
+
+  @@index([spaceId, day])
+  @@index([spaceId, createdAt])
+  @@map("entry")
+}
+
+model EntryImage {
+  id       String @id @default(cuid())
+  entryId  String
+  url      String @db.VarChar(512)
+  sortOrder Int   @default(0)
+  entry    Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@map("entry_image")
+}

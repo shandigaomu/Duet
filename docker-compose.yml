@@ -1,0 +1,25 @@
+services:
+  mysql:
+    image: mysql:8.0.45
+    container_name: duet-mysql
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: duet_root
+      MYSQL_DATABASE: duet
+      MYSQL_USER: duet
+      MYSQL_PASSWORD: duet_pass
+    volumes:
+      - duet_mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pduet_root"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  duet_mysql_data:
