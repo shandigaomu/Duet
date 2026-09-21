@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { AvatarCropDialog } from "@/components/me/AvatarCropDialog";
 import { Button } from "@/components/ui/Button";
@@ -100,9 +101,9 @@ function Body({
     });
   }
 
-  return (
+  const sheet = (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6">
+      <div className="fixed inset-0 z-[80] flex items-end justify-center md:items-center md:p-6">
         <button
           type="button"
           className="sheet-overlay absolute inset-0 bg-[rgba(18,21,26,0.18)] backdrop-blur-md"
@@ -113,9 +114,9 @@ function Body({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className="sheet-panel glass-sheet relative z-10 w-full max-w-[480px] rounded-t-[28px] md:rounded-[28px]"
+          className="sheet-panel glass-sheet relative z-10 flex max-h-[min(92dvh,720px)] w-full max-w-[480px] flex-col rounded-t-[28px] md:rounded-[28px]"
         >
-          <div className="flex items-start justify-between gap-4 border-b border-white/35 px-5 py-4 md:px-6">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/35 px-5 py-4 md:px-6">
             <div>
               <p className="text-[11px] font-medium tracking-[0.14em] text-[var(--accent)] uppercase">
                 Profile
@@ -137,7 +138,7 @@ function Body({
             </button>
           </div>
 
-          <div className="space-y-5 px-5 py-5 md:px-6">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 md:px-6">
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -210,7 +211,7 @@ function Body({
             ) : null}
           </div>
 
-          <div className="border-t border-white/35 px-5 py-4 md:px-6">
+          <div className="shrink-0 border-t border-white/35 bg-white/25 px-5 pt-4 backdrop-blur-xl md:px-6 pb-[max(1rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
             <Button
               className="h-12 w-full"
               onClick={save}
@@ -231,4 +232,7 @@ function Body({
       ) : null}
     </>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(sheet, document.body);
 }

@@ -87,7 +87,7 @@ export function AvatarCropDialog({
     natural && layout(natural.w, natural.h, scale, offset);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
       <button
         type="button"
         className="absolute inset-0 bg-[rgba(18,21,26,0.28)] backdrop-blur-sm"
