@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, SunMedium, UserRound } from "lucide-react";
+import { BookOpen, Heart, SunMedium, UserRound } from "lucide-react";
 import { MAIN_NAV } from "@/lib/nav";
 import { cn } from "@/lib/cn";
 
 const ICONS = {
   "/today": SunMedium,
   "/journal": BookOpen,
+  "/us": Heart,
   "/me": UserRound,
 } as const;
 
@@ -21,7 +22,7 @@ export function BottomNav() {
       style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))" }}
       aria-label="底部导航"
     >
-      <ul className="glass-nav mx-auto flex h-[var(--bottom-nav-h)] max-w-[var(--content-max)] items-stretch rounded-[var(--radius-xl)] px-2">
+      <ul className="glass-nav mx-auto flex h-[var(--bottom-nav-h)] max-w-[var(--content-max)] items-stretch rounded-[var(--radius-xl)] px-1.5">
         {MAIN_NAV.map((item) => {
           const active = item.match(pathname);
           const Icon = ICONS[item.href as keyof typeof ICONS];
@@ -36,7 +37,7 @@ export function BottomNav() {
               >
                 <Icon
                   className={cn(
-                    "size-[20px] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                    "size-[18px] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
                     active && "scale-110",
                   )}
                   strokeWidth={active ? 2 : 1.6}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
+import { JournalSectionTabs } from "@/components/journal/JournalSectionTabs";
 import {
   Workbench,
   WorkbenchTab,
@@ -27,12 +28,15 @@ type JournalViewProps = {
   initialFilter?: TimelineFilter;
   initialMonth?: string;
   currentMonth: string;
+  initialQuery?: string;
 };
 
 const FILTERS: { id: TimelineFilter; label: string }[] = [
   { id: "all", label: "全部" },
   { id: "mine", label: "我的" },
   { id: "yours", label: "你的" },
+  { id: "week", label: "本周" },
+  { id: "thisMonth", label: "本月" },
   { id: "month", label: "按月" },
 ];
 
@@ -43,21 +47,37 @@ export function JournalView({
   initialFilter = "all",
   initialMonth,
   currentMonth,
+  initialQuery = "",
 }: JournalViewProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<TimelineFilter>(initialFilter);
   const [month, setMonth] = useState(initialMonth || currentMonth);
+  const [query, setQuery] = useState(initialQuery);
   const [pending, startTransition] = useTransition();
 
-  function applyFilter(next: TimelineFilter, nextMonth = month) {
+  function pushParams(
+    next: TimelineFilter,
+    nextMonth = month,
+    nextQ = query,
+  ) {
     setFilter(next);
     startTransition(() => {
       const params = new URLSearchParams();
       if (next !== "all") params.set("filter", next);
       if (next === "month") params.set("month", nextMonth);
+      const q = nextQ.trim();
+      if (q) params.set("q", q);
       const qs = params.toString();
       router.push(qs ? `/journal?${qs}` : "/journal");
     });
+  }
+
+  function applyFilter(next: TimelineFilter, nextMonth = month) {
+    pushParams(next, nextMonth, query);
+  }
+
+  function applySearch() {
+    pushParams(filter, month, query);
   }
 
   const months = groupByMonth(initialItems);
@@ -80,32 +100,47 @@ export function JournalView({
           { label: "本月", value: stats.month },
         ]}
         toolbar={
-          <WorkbenchToolbar
-            trailing={
-              filter === "month" ? (
-                <input
-                  type="month"
-                  value={month}
-                  onChange={(e) => {
-                    setMonth(e.target.value);
-                    applyFilter("month", e.target.value);
-                  }}
-                  className="h-9 rounded-[10px] border border-line bg-white/45 px-3 text-[13px] text-ink outline-none"
-                />
-              ) : null
-            }
-          >
-            {FILTERS.map((f) => (
-              <WorkbenchTab
-                key={f.id}
-                active={filter === f.id}
-                disabled={pending}
-                onClick={() => applyFilter(f.id)}
-              >
-                {f.id === "yours" ? partnerNickname : f.label}
-              </WorkbenchTab>
-            ))}
-          </WorkbenchToolbar>
+          <div>
+            <JournalSectionTabs />
+            <WorkbenchToolbar
+              trailing={
+                <div className="flex items-center gap-2">
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value.slice(0, 80))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applySearch();
+                    }}
+                    placeholder="搜索标题/正文"
+                    className="h-9 w-28 rounded-[10px] border border-line bg-white/45 px-3 text-[13px] text-ink outline-none placeholder:text-ink-tertiary md:w-40"
+                  />
+                  {filter === "month" ? (
+                    <input
+                      type="month"
+                      value={month}
+                      onChange={(e) => {
+                        setMonth(e.target.value);
+                        applyFilter("month", e.target.value);
+                      }}
+                      className="h-9 rounded-[10px] border border-line bg-white/45 px-3 text-[13px] text-ink outline-none"
+                    />
+                  ) : null}
+                </div>
+              }
+            >
+              {FILTERS.map((f) => (
+                <WorkbenchTab
+                  key={f.id}
+                  active={filter === f.id}
+                  disabled={pending}
+                  onClick={() => applyFilter(f.id)}
+                >
+                  {f.id === "yours" ? partnerNickname : f.label}
+                </WorkbenchTab>
+              ))}
+            </WorkbenchToolbar>
+          </div>
         }
       >
         {initialItems.length === 0 ? (
@@ -151,6 +186,17 @@ export function JournalView({
                                 ? "我"
                                 : item.authorNickname}
                             </span>
+                            {item.authorSide === "me" &&
+                            item.visibility === "private" ? (
+                              <span className="text-[11px] text-ink-tertiary">
+                                仅自己
+                              </span>
+                            ) : null}
+                            {item.authorSide === "me" && item.partnerReadAt ? (
+                              <span className="text-[11px] text-ink-tertiary">
+                                已读
+                              </span>
+                            ) : null}
                           </div>
                           <p className="mt-1.5 text-[15px] font-medium text-ink">
                             {item.title || item.bodyPreview}

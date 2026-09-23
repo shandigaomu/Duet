@@ -1,13 +1,15 @@
 import { TodayView } from "@/components/today/TodayView";
+import { loadUpcomingHint } from "@/server/daymark-actions";
 import { loadTodayCheckIns } from "@/server/checkin-actions";
 import { countEntriesForDay } from "@/server/entry-actions";
 
 export const metadata = { title: "今日" };
 
 export default async function TodayPage() {
-  const [data, diary] = await Promise.all([
+  const [data, diary, dayHint] = await Promise.all([
     loadTodayCheckIns(),
     countEntriesForDay(),
+    loadUpcomingHint(),
   ]);
 
   return (
@@ -18,6 +20,7 @@ export default async function TodayPage() {
       partnerWasUnread={data.partnerWasUnread}
       partnerNickname={data.partnerNickname}
       todayEntryCount={diary.count}
+      dayHint={dayHint}
     />
   );
 }

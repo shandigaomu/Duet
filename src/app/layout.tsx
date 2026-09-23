@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Instrument_Serif, Manrope } from "next/font/google";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -30,13 +31,21 @@ export const metadata: Metadata = {
   description: "两人共用的生活日志与同步台",
 };
 
+const themeBoot = `(function(){try{var k='duet.theme';var p=localStorage.getItem(k)||'system';var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=p==='dark'||(p==='system'&&d)?'dark':'light';document.documentElement.classList.toggle('dark',r==='dark');document.documentElement.style.colorScheme=r;}catch(e){}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="zh-CN"
       className={`${manrope.variable} ${instrument.variable} ${plexMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full font-sans text-ink">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBoot }} />
+      </head>
+      <body className="min-h-full font-sans text-ink">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

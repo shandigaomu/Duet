@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { EditProfileSheet } from "@/components/me/EditProfileSheet";
+import { ThemePicker } from "@/components/theme/ThemeProvider";
 import { Button } from "@/components/ui/Button";
 import { authClient } from "@/lib/auth-client";
 import { unpairSpaceAction } from "@/server/space-actions";
@@ -112,6 +113,16 @@ export function MeSettings({
               <dd className="text-ink">{memberCount}/2</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="glass-panel p-5">
+          <h2 className="text-[12px] font-medium tracking-[0.04em] text-ink-tertiary">
+            外观
+          </h2>
+          <p className="mt-1 text-[13px] text-ink-secondary">主题</p>
+          <div className="mt-3">
+            <ThemePicker />
+          </div>
         </section>
 
         <section className="glass-panel p-5">

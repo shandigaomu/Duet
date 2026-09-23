@@ -5,11 +5,19 @@ import { loadTimeline } from "@/server/entry-actions";
 export const metadata = { title: "记录" };
 
 type Props = {
-  searchParams: Promise<{ filter?: string; month?: string }>;
+  searchParams: Promise<{ filter?: string; month?: string; q?: string }>;
 };
 
 function parseFilter(raw?: string): TimelineFilter {
-  if (raw === "mine" || raw === "yours" || raw === "month") return raw;
+  if (
+    raw === "mine" ||
+    raw === "yours" ||
+    raw === "week" ||
+    raw === "thisMonth" ||
+    raw === "month"
+  ) {
+    return raw;
+  }
   return "all";
 }
 
@@ -17,17 +25,19 @@ export default async function JournalPage({ searchParams }: Props) {
   const sp = await searchParams;
   const filter = parseFilter(sp.filter);
   const month = sp.month;
-  const data = await loadTimeline({ filter, month });
+  const q = sp.q ?? "";
+  const data = await loadTimeline({ filter, month, q });
 
   return (
     <JournalView
-      key={`${filter}-${month ?? data.currentMonth}`}
+      key={`${filter}-${month ?? data.currentMonth}-${data.q}`}
       initialItems={data.items}
       stats={data.stats}
       partnerNickname={data.partnerNickname}
       initialFilter={filter}
       initialMonth={month || data.currentMonth}
       currentMonth={data.currentMonth}
+      initialQuery={data.q}
     />
   );
 }

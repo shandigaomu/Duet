@@ -2,7 +2,13 @@ export const TITLE_MAX = 120;
 export const BODY_MAX = 20_000;
 export const IMAGE_MAX = 9;
 
-export type TimelineFilter = "all" | "mine" | "yours" | "month";
+export type TimelineFilter =
+  | "all"
+  | "mine"
+  | "yours"
+  | "week"
+  | "thisMonth"
+  | "month";
 
 export type EntryImageDTO = {
   id: string;
@@ -10,15 +16,20 @@ export type EntryImageDTO = {
   sortOrder: number;
 };
 
+export type EntryVisibility = "shared" | "private";
+
 export type EntryDTO = {
   id: string;
   day: string;
   title: string | null;
   body: string;
+  visibility: EntryVisibility;
   authorId: string;
   authorSide: "me" | "you";
   authorNickname: string;
   images: EntryImageDTO[];
+  /** 对方是否已读（仅作者侧有意义） */
+  partnerReadAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -29,9 +40,11 @@ export type EntryListItem = {
   day: string;
   title: string | null;
   bodyPreview: string;
+  visibility: EntryVisibility;
   authorSide: "me" | "you";
   authorNickname: string;
   imageUrls: string[];
+  partnerReadAt: string | null;
   createdAt: string;
 };
 
@@ -81,4 +94,31 @@ export function shanghaiMonth(date = new Date()) {
   })
     .format(date)
     .slice(0, 7);
+}
+
+/** 本周（周一～周日）起止 YYYY-MM-DD，Asia/Shanghai */
+export function shanghaiWeekRange(date = new Date()): {
+  start: string;
+  end: string;
+} {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  const [y, m, d] = today.split("-").map(Number);
+  const utc = Date.UTC(y!, m! - 1, d!);
+  const wd = new Date(utc).getUTCDay(); // 0=Sun
+  const mondayOffset = wd === 0 ? -6 : 1 - wd;
+  const startMs = utc + mondayOffset * 86_400_000;
+  const endMs = startMs + 6 * 86_400_000;
+  const fmt = (ms: number) => {
+    const dt = new Date(ms);
+    const yy = dt.getUTCFullYear();
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getUTCDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  };
+  return { start: fmt(startMs), end: fmt(endMs) };
 }

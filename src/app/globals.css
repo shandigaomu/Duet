@@ -65,6 +65,71 @@
   --dur-slow: 900ms;
 }
 
+html.dark {
+  --brand: #8fbfb4;
+  --brand-soft: rgba(143, 191, 180, 0.18);
+  --me: #8fbfb4;
+  --you: #c4a890;
+  --me-soft: rgba(143, 191, 180, 0.12);
+  --you-soft: rgba(196, 168, 144, 0.12);
+  --signal: #c4a574;
+  --danger: #c47a7a;
+  --focus: #8fbfb4;
+  --accent: #6b9ef0;
+
+  --ink: #e8ecf0;
+  --ink-secondary: rgba(232, 236, 240, 0.68);
+  --ink-tertiary: rgba(232, 236, 240, 0.42);
+  --line: rgba(232, 236, 240, 0.12);
+  --line-strong: rgba(232, 236, 240, 0.18);
+
+  --env-warm: #3a2e28;
+  --env-cool: #1e2e38;
+  --env-center: #0e1214;
+  --bg: #0e1214;
+  --bg-elevated: rgba(23, 28, 31, 0.72);
+
+  --glass-fill: rgba(23, 28, 31, 0.55);
+  --glass-fill-strong: rgba(23, 28, 31, 0.78);
+  --glass-fill-nav: rgba(14, 18, 20, 0.55);
+  --glass-stroke: rgba(232, 236, 240, 0.12);
+  --glass-stroke-soft: rgba(232, 236, 240, 0.08);
+  --glass-highlight: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  --shadow-glass: 0 10px 40px rgba(0, 0, 0, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  --shadow-sheet: 0 24px 80px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+html.dark .glass-stat {
+  border-right-color: rgba(232, 236, 240, 0.1);
+}
+
+html.dark .glass-toolbar {
+  background: rgba(23, 28, 31, 0.45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+html.dark .glass-stage {
+  background: rgba(23, 28, 31, 0.55);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html.dark .glass-nav,
+  html.dark .glass-bar,
+  html.dark .glass-panel,
+  html.dark .glass-sheet,
+  html.dark .glass-stage,
+  html.dark .glass-toolbar {
+    background: #171c1f;
+  }
+}
+
 @theme inline {
   --color-bg: var(--env-center);
   --color-bg-elevated: var(--bg-elevated);

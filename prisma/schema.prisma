@@ -21,6 +21,10 @@ model User {
   memberships   SpaceMember[]
   checkIns      CheckIn[]
   entries       Entry[]
+  dayMarks      DayMark[]
+  entryReads    EntryRead[]
+  listItems     ListItem[]
+  notes         Note[]
 
   @@map("user")
 }
@@ -79,6 +83,9 @@ model Space {
   members   SpaceMember[]
   checkIns  CheckIn[]
   entries   Entry[]
+  dayMarks  DayMark[]
+  listItems ListItem[]
+  notes     Note[]
 
   @@map("space")
 }
@@ -121,17 +128,20 @@ model CheckIn {
 }
 
 model Entry {
-  id        String       @id @default(cuid())
-  spaceId   String
-  authorId  String
-  day       String       @db.Char(10)
-  title     String?      @db.VarChar(120)
-  body      String       @db.Text
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  space     Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  images    EntryImage[]
+  id         String       @id @default(cuid())
+  spaceId    String
+  authorId   String
+  day        String       @db.Char(10)
+  title      String?      @db.VarChar(120)
+  body       String       @db.Text
+  /// shared | private（仅作者可见）
+  visibility String       @default("shared") @db.VarChar(16)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  space      Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author     User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  images     EntryImage[]
+  reads      EntryRead[]
 
   @@index([spaceId, day])
   @@index([spaceId, createdAt])
@@ -147,4 +157,77 @@ model EntryImage {
 
   @@index([entryId])
   @@map("entry_image")
+}
+
+/// 日子标记：单日 + 可选周年重复；空间内双方可改删
+model DayMark {
+  id        String   @id @default(cuid())
+  spaceId   String
+  authorId  String
+  /// Asia/Shanghai 自然日 YYYY-MM-DD（周年按月日重复）
+  day       String   @db.Char(10)
+  title     String   @db.VarChar(40)
+  note      String?  @db.VarChar(200)
+  yearly    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, day])
+  @@map("day_mark")
+}
+
+/// 日记已读：对方打开详情后标记
+model EntryRead {
+  id       String   @id @default(cuid())
+  entryId  String
+  readerId String
+  readAt   DateTime @default(now())
+  entry    Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  reader   User     @relation(fields: [readerId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, readerId])
+  @@index([entryId])
+  @@map("entry_read")
+}
+
+/// 共同清单：想去的 / 想吃的 / 想做的
+model ListItem {
+  id          String    @id @default(cuid())
+  spaceId     String
+  authorId    String
+  /// go | eat | do
+  category    String    @db.VarChar(8)
+  title       String    @db.VarChar(80)
+  /// open | done
+  status      String    @default("open") @db.VarChar(8)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  space       Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, status, category])
+  @@map("list_item")
+}
+
+/// 悄悄话：留言 / 回复 / 置顶一句
+model Note {
+  id        String   @id @default(cuid())
+  spaceId   String
+  authorId  String
+  body      String   @db.VarChar(500)
+  parentId  String?
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent    Note?    @relation("NoteReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Note[]   @relation("NoteReplies")
+
+  @@index([spaceId, createdAt])
+  @@index([parentId])
+  @@map("note")
 }

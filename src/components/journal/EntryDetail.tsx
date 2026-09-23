@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowLeft, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { formatDayShort, type EntryDTO } from "@/lib/journal";
-import { deleteEntryAction } from "@/server/entry-actions";
+import {
+  deleteEntryAction,
+  markEntryReadAction,
+} from "@/server/entry-actions";
 import { cn } from "@/lib/cn";
 
 type EntryDetailProps = {
@@ -20,6 +23,13 @@ export function EntryDetail({ entry }: EntryDetailProps) {
   const [pending, startTransition] = useTransition();
   const [slide, setSlide] = useState(0);
   const isMine = entry.authorSide === "me";
+  const markedRef = useRef(false);
+
+  useEffect(() => {
+    if (isMine || markedRef.current) return;
+    markedRef.current = true;
+    void markEntryReadAction(entry.id);
+  }, [entry.id, isMine]);
 
   function onDelete() {
     setError(null);
@@ -53,6 +63,12 @@ export function EntryDetail({ entry }: EntryDetailProps) {
           >
             {entry.authorSide === "me" ? "我" : entry.authorNickname}
           </span>
+          {isMine && entry.visibility === "private" ? (
+            <span className="ml-1.5 text-[11px] text-ink-tertiary">仅自己</span>
+          ) : null}
+          {isMine && entry.partnerReadAt ? (
+            <span className="ml-1.5 text-[11px] text-ink-tertiary">已读</span>
+          ) : null}
         </p>
         {isMine ? (
           <div className="relative">

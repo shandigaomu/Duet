@@ -16,9 +16,9 @@ export default async function MePage() {
       description="资料、空间信息与危险操作集中在此。"
       stats={[
         { label: "配对", value: members.length >= 2 ? "已配对" : "等待中" },
-        { label: "主题", value: "浅色" },
+        { label: "主题", value: "可切换" },
         { label: "成员", value: `${members.length}/2` },
-        { label: "版本", value: "V1" },
+        { label: "版本", value: "V2" },
       ]}
     >
       <MeSettings

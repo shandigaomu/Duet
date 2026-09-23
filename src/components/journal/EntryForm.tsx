@@ -1,9 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import {
+  clearEntryDraft,
+  loadEntryDraft,
+  saveEntryDraft,
+} from "@/lib/entry-draft";
 import {
   BODY_MAX,
   IMAGE_MAX,
@@ -20,6 +25,8 @@ import {
 type EntryFormProps = {
   mode: "create" | "edit";
   initial?: EntryDTO | null;
+  /** 写新日记时用于 localStorage 草稿 */
+  draftOwner?: { userId: string; spaceId: string } | null;
 };
 
 type ImageItem = {
@@ -27,17 +34,66 @@ type ImageItem = {
   file?: File | null;
 };
 
-export function EntryForm({ mode, initial }: EntryFormProps) {
+export function EntryForm({
+  mode,
+  initial,
+  draftOwner = null,
+}: EntryFormProps) {
   const router = useRouter();
   const [day, setDay] = useState(initial?.day ?? shanghaiDay());
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
+  const [visibility, setVisibility] = useState<"shared" | "private">(
+    initial?.visibility ?? "shared",
+  );
   const [images, setImages] = useState<ImageItem[]>(
     () =>
       initial?.images.map((i) => ({ preview: i.url, file: null })) ?? [],
   );
   const [error, setError] = useState<string | null>(null);
+  const [draftHint, setDraftHint] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const [pending, startTransition] = useTransition();
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    if (mode !== "create" || !draftOwner || hydrated.current) return;
+    hydrated.current = true;
+    const draft = loadEntryDraft(draftOwner.userId, draftOwner.spaceId);
+    if (!draft) {
+      setDraftRestored(true);
+      return;
+    }
+    if (draft.body.trim() || draft.title.trim() || draft.imageUrls.length) {
+      setDay(draft.day);
+      setTitle(draft.title);
+      setBody(draft.body);
+      setImages(draft.imageUrls.map((url) => ({ preview: url, file: null })));
+      setDraftHint(true);
+    }
+    setDraftRestored(true);
+  }, [mode, draftOwner]);
+
+  useEffect(() => {
+    if (mode !== "create" || !draftOwner || !draftRestored) return;
+    const t = window.setTimeout(() => {
+      const imageUrls = images
+        .map((i) => i.preview)
+        .filter(
+          (u) =>
+            u.startsWith("http://") ||
+            u.startsWith("https://") ||
+            u.startsWith("/api/files/"),
+        );
+      saveEntryDraft(draftOwner.userId, draftOwner.spaceId, {
+        day,
+        title,
+        body,
+        imageUrls,
+      });
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [mode, draftOwner, draftRestored, day, title, body, images]);
 
   function onPickImages(files: FileList | null) {
     if (!files?.length) return;
@@ -75,6 +131,7 @@ export function EntryForm({ mode, initial }: EntryFormProps) {
         title: title.trim() || null,
         body,
         imageUrls,
+        visibility,
       };
       const res =
         mode === "edit" && initial
@@ -84,6 +141,9 @@ export function EntryForm({ mode, initial }: EntryFormProps) {
       if (!res.ok || !res.entry) {
         setError(res.error || "保存失败");
         return;
+      }
+      if (mode === "create" && draftOwner) {
+        clearEntryDraft(draftOwner.userId, draftOwner.spaceId);
       }
       router.push(`/journal/${res.entry.id}`);
       router.refresh();
@@ -114,6 +174,10 @@ export function EntryForm({ mode, initial }: EntryFormProps) {
           <p className="mb-4 text-[13px] text-danger" role="alert">
             {error}
           </p>
+        ) : null}
+
+        {mode === "create" && draftHint ? (
+          <p className="mb-3 text-[12px] text-ink-tertiary">已恢复本地草稿</p>
         ) : null}
 
         <label className="block">
@@ -191,7 +255,31 @@ export function EntryForm({ mode, initial }: EntryFormProps) {
               </label>
             ) : null}
           </div>
-          <p className="mt-4 text-[13px] text-ink-tertiary">可见性：共享（V1 固定）</p>
+          <p className="mt-4 text-[13px] text-ink-tertiary">可见性</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setVisibility("shared")}
+              className={`rounded-[10px] px-3 py-1.5 text-[13px] ${
+                visibility === "shared"
+                  ? "bg-brand text-white"
+                  : "bg-white/45 text-ink-secondary"
+              }`}
+            >
+              共享
+            </button>
+            <button
+              type="button"
+              onClick={() => setVisibility("private")}
+              className={`rounded-[10px] px-3 py-1.5 text-[13px] ${
+                visibility === "private"
+                  ? "bg-brand text-white"
+                  : "bg-white/45 text-ink-secondary"
+              }`}
+            >
+              仅自己
+            </button>
+          </div>
         </div>
       </main>
     </>

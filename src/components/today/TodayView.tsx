@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { PersonColumn } from "@/components/today/PersonColumn";
 import { UpdateTodaySheet } from "@/components/today/UpdateTodaySheet";
 import {
@@ -12,7 +13,11 @@ import {
 } from "@/components/shell/Workbench";
 import { Button } from "@/components/ui/Button";
 import { formatTodayLabel, type CheckIn } from "@/lib/checkin";
+import type { DayMarkHint } from "@/lib/daymark";
 import { saveTodayCheckInAction } from "@/server/checkin-actions";
+
+const POLL_KEY = "duet.today.poll";
+const POLL_MS = 45_000;
 
 type TodayViewProps = {
   initialMine: CheckIn | null;
@@ -20,6 +25,7 @@ type TodayViewProps = {
   partnerWasUnread?: boolean;
   partnerNickname?: string;
   todayEntryCount?: number;
+  dayHint?: DayMarkHint | null;
 };
 
 export function TodayView({
@@ -28,7 +34,9 @@ export function TodayView({
   partnerWasUnread = false,
   partnerNickname = "你",
   todayEntryCount = 0,
+  dayHint = null,
 }: TodayViewProps) {
+  const router = useRouter();
   const dateLabel = formatTodayLabel();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [focus, setFocus] = useState<"both" | "you" | "me">("both");
@@ -38,12 +46,48 @@ export function TodayView({
   const [mineKey, setMineKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [pollEnabled, setPollEnabled] = useState(true);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(POLL_KEY);
+      if (raw === "0") setPollEnabled(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     if (!partnerWasUnread) return;
     const t = window.setTimeout(() => setPartnerUnread(false), 800);
     return () => window.clearTimeout(t);
   }, [partnerWasUnread]);
+
+  useEffect(() => {
+    if (!pollEnabled) return;
+    function tick() {
+      if (document.visibilityState !== "visible") return;
+      router.refresh();
+    }
+    const id = window.setInterval(tick, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [pollEnabled, router]);
+
+  function togglePoll() {
+    setPollEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(POLL_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  function refresh() {
+    startTransition(() => router.refresh());
+  }
 
   function handleSave(
     next: Omit<CheckIn, "partnerReadAt"> & { partnerReadAt: null },
@@ -75,13 +119,29 @@ export function TodayView({
         title="今日展台"
         description={`${dateLabel} · 先看对方，再写下自己的今天`}
         action={
-          <Button
-            className="h-10 px-4"
-            onClick={() => setSheetOpen(true)}
-            disabled={pending}
-          >
-            更新今日
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={pending}
+              className="flex h-10 items-center gap-1.5 rounded-[12px] bg-white/45 px-3 text-[13px] text-ink-secondary hover:bg-white/60"
+              aria-label="刷新"
+              title={pollEnabled ? "自动刷新已开" : "自动刷新已关"}
+            >
+              <RefreshCw
+                className={`size-3.5 ${pending ? "animate-spin" : ""}`}
+                strokeWidth={1.75}
+              />
+              刷新
+            </button>
+            <Button
+              className="h-10 px-4"
+              onClick={() => setSheetOpen(true)}
+              disabled={pending}
+            >
+              更新今日
+            </Button>
+          </div>
         }
         stats={[
           { label: "已同步", value: `${syncedCount}/2` },
@@ -127,6 +187,15 @@ export function TodayView({
           <p className="mb-4 text-[13px] text-danger" role="alert">
             {error}
           </p>
+        ) : null}
+
+        {dayHint ? (
+          <Link
+            href="/journal/days"
+            className="mb-4 block text-[13px] text-ink-secondary hover:text-brand"
+          >
+            {dayHint.label}
+          </Link>
         ) : null}
 
         <div
@@ -210,6 +279,13 @@ export function TodayView({
           ) : (
             <p className="mt-2 text-[14px] text-ink-secondary">暂无关联日记</p>
           )}
+          <button
+            type="button"
+            onClick={togglePoll}
+            className="mt-3 text-[12px] text-ink-tertiary hover:text-ink-secondary"
+          >
+            自动刷新：{pollEnabled ? "开（45s）" : "关"}
+          </button>
         </section>
       </Workbench>
 

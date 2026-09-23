@@ -10,6 +10,7 @@ import {
   TITLE_MAX,
   previewBody,
   shanghaiMonth,
+  shanghaiWeekRange,
   type CheckInSnapshotItem,
   type EntryDTO,
   type EntryListItem,
@@ -46,18 +47,25 @@ function toEntryDTO(
     day: string;
     title: string | null;
     body: string;
+    visibility?: string;
     authorId: string;
     createdAt: Date;
     updatedAt: Date;
     images: { id: string; url: string; sortOrder: number }[];
+    reads?: { readerId: string; readAt: Date }[];
   },
   ctx: MembershipCtx,
 ): EntryDTO {
+  const partner = partnerOf(ctx);
+  const partnerRead = partner
+    ? row.reads?.find((r) => r.readerId === partner.userId)
+    : undefined;
   return {
     id: row.id,
     day: row.day,
     title: row.title,
     body: row.body,
+    visibility: row.visibility === "private" ? "private" : "shared",
     authorId: row.authorId,
     authorSide: sideOf(row.authorId, ctx.user.id),
     authorNickname: nicknameFor(row.authorId, ctx),
@@ -69,8 +77,15 @@ function toEntryDTO(
         url: img.url,
         sortOrder: img.sortOrder,
       })),
+    partnerReadAt: partnerRead?.readAt.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function entryVisibleWhere(userId: string) {
+  return {
+    OR: [{ visibility: "shared" }, { authorId: userId }],
   };
 }
 
@@ -103,6 +118,7 @@ const entrySchema = z.object({
     .min(1, "请写一点正文")
     .max(BODY_MAX, `正文最多 ${BODY_MAX} 字`),
   imageUrls: z.array(z.string()).max(IMAGE_MAX).optional().default([]),
+  visibility: z.enum(["shared", "private"]).optional().default("shared"),
 });
 
 export type EntryActionResult = {
@@ -114,15 +130,18 @@ export type EntryActionResult = {
 export async function loadTimeline(opts?: {
   filter?: TimelineFilter;
   month?: string; // YYYY-MM
+  q?: string;
 }): Promise<{
   items: TimelineItem[];
   stats: TimelineStats;
   partnerNickname: string;
   myNickname: string;
   currentMonth: string;
+  q: string;
 }> {
   const ctx = await requirePaired();
   const filter = opts?.filter ?? "all";
+  const q = (opts?.q ?? "").trim().slice(0, 80);
   const currentMonth = shanghaiMonth();
   const month = opts?.month && /^\d{4}-\d{2}$/.test(opts.month)
     ? opts.month
@@ -132,14 +151,31 @@ export async function loadTimeline(opts?: {
 
   const [allEntries, allCheckIns] = await Promise.all([
     prisma.entry.findMany({
-      where: { spaceId },
-      include: { images: true },
+      where: {
+        spaceId,
+        AND: [
+          entryVisibleWhere(ctx.user.id),
+          ...(q
+            ? [
+                {
+                  OR: [
+                    { title: { contains: q } },
+                    { body: { contains: q } },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      },
+      include: { images: true, reads: true },
       orderBy: [{ day: "desc" }, { createdAt: "desc" }],
     }),
-    prisma.checkIn.findMany({
-      where: { spaceId },
-      orderBy: [{ day: "desc" }, { updatedAt: "desc" }],
-    }),
+    q
+      ? Promise.resolve([])
+      : prisma.checkIn.findMany({
+          where: { spaceId },
+          orderBy: [{ day: "desc" }, { updatedAt: "desc" }],
+        }),
   ]);
 
   const stats: TimelineStats = {
@@ -158,17 +194,26 @@ export async function loadTimeline(opts?: {
   } else if (filter === "yours") {
     entries = entries.filter((e) => e.authorId !== ctx.user.id);
     checkIns = checkIns.filter((c) => c.authorId !== ctx.user.id);
+  } else if (filter === "week") {
+    const { start, end } = shanghaiWeekRange();
+    entries = entries.filter((e) => e.day >= start && e.day <= end);
+    checkIns = checkIns.filter((c) => c.day >= start && c.day <= end);
+  } else if (filter === "thisMonth") {
+    entries = entries.filter((e) => e.day.startsWith(currentMonth));
+    checkIns = checkIns.filter((c) => c.day.startsWith(currentMonth));
   } else if (filter === "month") {
     entries = entries.filter((e) => e.day.startsWith(month));
     checkIns = checkIns.filter((c) => c.day.startsWith(month));
   }
 
+  const partnerId = partner?.userId;
   const entryItems: EntryListItem[] = entries.map((e) => ({
     kind: "entry" as const,
     id: e.id,
     day: e.day,
     title: e.title,
     bodyPreview: previewBody(e.body),
+    visibility: e.visibility === "private" ? "private" : "shared",
     authorSide: sideOf(e.authorId, ctx.user.id),
     authorNickname: nicknameFor(e.authorId, ctx),
     imageUrls: e.images
@@ -176,6 +221,11 @@ export async function loadTimeline(opts?: {
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((img) => img.url)
       .slice(0, 3),
+    partnerReadAt:
+      e.authorId === ctx.user.id && partnerId
+        ? (e.reads.find((r) => r.readerId === partnerId)?.readAt.toISOString() ??
+          null)
+        : null,
     createdAt: e.createdAt.toISOString(),
   }));
 
@@ -218,14 +268,19 @@ export async function loadTimeline(opts?: {
     partnerNickname: partner?.nickname ?? "你",
     myNickname: ctx.membership.nickname,
     currentMonth,
+    q,
   };
 }
 
 export async function getEntryById(id: string): Promise<EntryDTO | null> {
   const ctx = await requirePaired();
   const row = await prisma.entry.findFirst({
-    where: { id, spaceId: ctx.membership.spaceId },
-    include: { images: true },
+    where: {
+      id,
+      spaceId: ctx.membership.spaceId,
+      ...entryVisibleWhere(ctx.user.id),
+    },
+    include: { images: true, reads: true },
   });
   if (!row) return null;
   return toEntryDTO(row, ctx);
@@ -235,7 +290,11 @@ export async function countEntriesForDay(day?: string) {
   const ctx = await requirePaired();
   const target = day ?? shanghaiDay();
   const count = await prisma.entry.count({
-    where: { spaceId: ctx.membership.spaceId, day: target },
+    where: {
+      spaceId: ctx.membership.spaceId,
+      day: target,
+      ...entryVisibleWhere(ctx.user.id),
+    },
   });
   return { day: target, count };
 }
@@ -245,6 +304,7 @@ export async function createEntryAction(input: {
   title?: string | null;
   body: string;
   imageUrls?: string[];
+  visibility?: "shared" | "private";
 }): Promise<EntryActionResult> {
   const ctx = await requirePaired();
   const parsed = entrySchema.safeParse({
@@ -268,6 +328,7 @@ export async function createEntryAction(input: {
       day: parsed.data.day,
       title,
       body: parsed.data.body,
+      visibility: parsed.data.visibility,
       images: urls.length
         ? {
             create: urls.map((url, i) => ({
@@ -277,11 +338,13 @@ export async function createEntryAction(input: {
           }
         : undefined,
     },
-    include: { images: true },
+    include: { images: true, reads: true },
   });
 
   revalidatePath("/journal");
   revalidatePath("/today");
+  revalidatePath("/us");
+  revalidatePath("/us/album");
   return { ok: true, entry: toEntryDTO(row, ctx) };
 }
 
@@ -291,6 +354,7 @@ export async function updateEntryAction(input: {
   title?: string | null;
   body: string;
   imageUrls?: string[];
+  visibility?: "shared" | "private";
 }): Promise<EntryActionResult> {
   const ctx = await requirePaired();
   const existing = await prisma.entry.findFirst({
@@ -306,6 +370,7 @@ export async function updateEntryAction(input: {
     title: input.title,
     body: input.body,
     imageUrls: persistableUrls(input.imageUrls),
+    visibility: input.visibility,
   });
   if (!parsed.success) {
     return {
@@ -325,6 +390,7 @@ export async function updateEntryAction(input: {
         day: parsed.data.day,
         title,
         body: parsed.data.body,
+        visibility: parsed.data.visibility,
         images: urls.length
           ? {
               create: urls.map((url, i) => ({
@@ -334,13 +400,14 @@ export async function updateEntryAction(input: {
             }
           : undefined,
       },
-      include: { images: true },
+      include: { images: true, reads: true },
     });
   });
 
   revalidatePath("/journal");
   revalidatePath(`/journal/${existing.id}`);
   revalidatePath("/today");
+  revalidatePath("/us/album");
   return { ok: true, entry: toEntryDTO(row, ctx) };
 }
 
@@ -359,5 +426,37 @@ export async function deleteEntryAction(
   await prisma.entry.delete({ where: { id } });
   revalidatePath("/journal");
   revalidatePath("/today");
+  return { ok: true };
+}
+
+/** 对方打开日记详情时标记已读（自己打开自己的不写） */
+export async function markEntryReadAction(
+  entryId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await requirePaired();
+  const entry = await prisma.entry.findFirst({
+    where: { id: entryId, spaceId: ctx.membership.spaceId },
+  });
+  if (!entry) return { ok: false, error: "日记不存在" };
+  if (entry.authorId === ctx.user.id) return { ok: true };
+
+  await prisma.entryRead.upsert({
+    where: {
+      entryId_readerId: {
+        entryId: entry.id,
+        readerId: ctx.user.id,
+      },
+    },
+    create: {
+      entryId: entry.id,
+      readerId: ctx.user.id,
+    },
+    update: {
+      readAt: new Date(),
+    },
+  });
+
+  revalidatePath("/journal");
+  revalidatePath(`/journal/${entry.id}`);
   return { ok: true };
 }
