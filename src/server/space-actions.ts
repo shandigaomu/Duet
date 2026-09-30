@@ -208,6 +208,38 @@ export async function updateSpaceInfoAction(input: {
   return { ok: true };
 }
 
+/** P2-N4：更新我的时区（IANA，如 Asia/Shanghai；null = 默认上海） */
+export async function updateMyTimeZoneAction(input: {
+  timeZone: string | null;
+}): Promise<ActionResult> {
+  const user = await requireSessionUser();
+  if (!user) return { ok: false, error: "请先登录" };
+
+  const membership = await prisma.spaceMember.findUnique({
+    where: { userId: user.id },
+  });
+  if (!membership) return { ok: false, error: "你不在任何空间中" };
+
+  const timeZone = input.timeZone?.trim() || null;
+  if (timeZone) {
+    try {
+      new Intl.DateTimeFormat("en-CA", { timeZone });
+    } catch {
+      return { ok: false, error: "时区无效" };
+    }
+    if (timeZone.length > 64) return { ok: false, error: "时区名过长" };
+  }
+
+  await prisma.spaceMember.update({
+    where: { id: membership.id },
+    data: { timeZone },
+  });
+
+  revalidatePath("/me");
+  revalidatePath("/today");
+  return { ok: true };
+}
+
 /** 创建方等待页轮询：对方加入后返回 ready */
 export async function checkPairingReadyAction(): Promise<{ ready: boolean }> {
   const user = await requireSessionUser();

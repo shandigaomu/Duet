@@ -11,6 +11,11 @@ const SECTIONS = [
     label: "日子",
     match: (p: string) => p.startsWith("/journal/days"),
   },
+  {
+    href: "/journal/weekly",
+    label: "周报",
+    match: (p: string) => p.startsWith("/journal/weekly"),
+  },
 ] as const;
 
 export function JournalSectionTabs() {

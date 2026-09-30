@@ -27,6 +27,12 @@ model User {
   notes         Note[]
   errorLogs     ErrorLog[]
   entryReactions EntryReaction[]
+  pushSubscriptions PushSubscription[]
+  notifyPref    NotifyPref?
+  appLock       AppLock?
+  hugsGiven     CheckInHug[]
+  letters       Letter[]
+  entrySections EntrySection[]
 
   @@map("user")
 }
@@ -92,6 +98,7 @@ model Space {
   dayMarks  DayMark[]
   listItems ListItem[]
   notes     Note[]
+  letters   Letter[]
 
   @@map("space")
 }
@@ -102,6 +109,8 @@ model SpaceMember {
   userId    String
   nickname  String   @db.VarChar(40)
   avatarUrl String?  @db.VarChar(512)
+  /// P2-N4：对方时区（IANA，如 Asia/Shanghai；null = 默认上海）
+  timeZone  String?  @db.VarChar(64)
   joinedAt  DateTime @default(now())
   space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -127,6 +136,7 @@ model CheckIn {
   updatedAt     DateTime  @updatedAt
   space         Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   author        User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  hugs          CheckInHug[]
 
   @@unique([spaceId, authorId, day])
   @@index([spaceId, day])
@@ -142,6 +152,10 @@ model Entry {
   body       String       @db.Text
   /// shared | private（仅作者可见）
   visibility String       @default("shared") @db.VarChar(16)
+  /// P2-N5：软删除时间（null = 正常；30 天后物理清理）
+  deletedAt  DateTime?
+  /// P2-N8：合写状态 none | pending | published
+  collabStatus String     @default("none") @db.VarChar(16)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
   space      Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -149,9 +163,12 @@ model Entry {
   images     EntryImage[]
   reads      EntryRead[]
   reactions  EntryReaction[]
+  sections   EntrySection[]
 
   @@index([spaceId, day])
   @@index([spaceId, createdAt])
+  @@index([spaceId, deletedAt])
+  @@index([spaceId, collabStatus])
   @@map("entry")
 }
 
@@ -249,10 +266,105 @@ model Note {
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   parent    Note?    @relation("NoteReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Note[]   @relation("NoteReplies")
+  /// P2-N5：软删除时间（null = 正常；30 天后物理清理）
+  deletedAt DateTime?
 
   @@index([spaceId, createdAt])
   @@index([parentId])
+  @@index([spaceId, deletedAt])
   @@map("note")
+}
+
+/// P2-N2：抱抱（今日轻反应，每天每条 CheckIn 每人限一次）
+model CheckInHug {
+  id        String   @id @default(cuid())
+  checkInId String
+  checkIn   CheckIn  @relation(fields: [checkInId], references: [id], onDelete: Cascade)
+  giverId   String
+  giver     User     @relation(fields: [giverId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([checkInId, giverId])
+  @@map("check_in_hug")
+}
+
+/// P2-N3：时光信（写给未来的信，unlockDay 到达前收信方不可见内容）
+model Letter {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title     String?  @db.VarChar(120)
+  body      String   @db.VarChar(2000)
+  imageUrl  String?  @db.VarChar(512)
+  /// 解锁日 YYYY-MM-DD（必填，不得早于今天）
+  unlockDay String   @db.Char(10)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([spaceId, unlockDay])
+  @@map("letter")
+}
+
+/// P2-N8：合写日记的对方段落（作者段落即 Entry.body，无需迁移存量）
+model EntrySection {
+  id        String    @id @default(cuid())
+  entryId   String
+  entry     Entry     @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String    @db.Text
+  images    Json?
+  /// 该段作者点「确认完成」的时间；双方都确认 → Entry.collabStatus = published
+  confirmedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([entryId, authorId])
+  @@map("entry_section")
+}
+
+/// V3-N1：Web Push 订阅（一人可多设备）
+model PushSubscription {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint     String   @db.VarChar(512)
+  /// sha256(endpoint) 前 32 字节 hex，用于唯一约束
+  endpointHash String   @db.Char(64)
+  p256dh       String   @db.VarChar(160)
+  auth         String   @db.VarChar(64)
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, endpointHash])
+  @@map("push_subscriptions")
+}
+
+/// V3-N1/N2：通知偏好（每用户一行，无则全默认）
+model NotifyPref {
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Web Push 即时通知
+  pushEnabled  Boolean  @default(true)
+  /// 邮件即时通知（默认关，避免打扰）
+  emailEnabled Boolean  @default(false)
+  /// 每周一 9:00 摘要邮件
+  emailWeekly  Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+
+  @@map("notify_pref")
+}
+
+/// P2-N6：隐私锁 v1（4 位 PIN，锁在服务端）
+model AppLock {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinHash   String   @db.VarChar(100)
+  enabledAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("app_lock")
 }
 
 /// 客户端/服务端错误上报（P0-3，30 天自动清理）

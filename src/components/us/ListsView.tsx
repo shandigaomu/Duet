@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import {
+  categoryLabel,
   LIST_CATEGORIES,
   LIST_TITLE_MAX,
   type ListCategory,
@@ -23,6 +24,7 @@ import {
   deleteListItemAction,
   reopenListItemAction,
 } from "@/server/list-actions";
+import { CompleteListSheet } from "@/components/us/CompleteListSheet";
 
 type ListsViewProps = {
   items: ListItemDTO[];
@@ -41,6 +43,7 @@ export function ListsView({
   const [addCat, setAddCat] = useState<ListCategory>("go");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [completing, setCompleting] = useState<ListItemDTO | null>(null);
 
   function filter(next: ListCategory | "all") {
     setCategory(next);
@@ -64,16 +67,53 @@ export function ListsView({
   }
 
   function toggle(item: ListItemDTO) {
+    if (item.status === "open") {
+      // P1-3：弹三选层，替代 window.confirm
+      setCompleting(item);
+      return;
+    }
     startTransition(async () => {
-      if (item.status === "open") {
-        const archive = window.confirm("完成了！要归档到时间线吗？");
-        await completeListItemAction({
+      await reopenListItemAction(item.id);
+      router.refresh();
+    });
+  }
+
+  function completeWith(choice: "done" | "archive" | "diary") {
+    const item = completing;
+    if (!item) return;
+    setError(null);
+    if (choice === "diary") {
+      // 先标记完成（不归档），再跳写日记页预填
+      startTransition(async () => {
+        const res = await completeListItemAction({
           id: item.id,
-          archiveToTimeline: archive,
+          archiveToTimeline: false,
         });
-      } else {
-        await reopenListItemAction(item.id);
+        if (res?.error) {
+          setError(res.error);
+          return;
+        }
+        setCompleting(null);
+        const prefill = encodeURIComponent(
+          JSON.stringify({
+            title: `清单 · ${categoryLabel(item.category)}`,
+            body: `完成了「${item.title}」`,
+          }),
+        );
+        router.push(`/journal/new?prefill=${prefill}`);
+      });
+      return;
+    }
+    startTransition(async () => {
+      const res = await completeListItemAction({
+        id: item.id,
+        archiveToTimeline: choice === "archive",
+      });
+      if (res?.error) {
+        setError(res.error);
+        return;
       }
+      setCompleting(null);
       router.refresh();
     });
   }
@@ -244,6 +284,15 @@ export function ListsView({
         <p className="mt-8 text-center text-[14px] text-ink-tertiary">
           还没有清单，加一条想一起做的事吧
         </p>
+      ) : null}
+
+      {completing ? (
+        <CompleteListSheet
+          item={completing}
+          pending={pending}
+          onClose={() => setCompleting(null)}
+          onPick={completeWith}
+        />
       ) : null}
     </Workbench>
   );

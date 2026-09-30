@@ -40,6 +40,7 @@ export async function loadAlbum(opts?: {
       entry: {
         spaceId: ctx.membership.spaceId,
         OR: [{ visibility: "shared" }, { authorId: ctx.user.id }],
+        deletedAt: null,
         ...(source === "mine"
           ? { authorId: ctx.user.id }
           : source === "yours"

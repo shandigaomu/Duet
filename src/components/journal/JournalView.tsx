@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import {
   formatDayShort,
   formatMonthHeading,
+  type OnThisDayItem,
   type TimelineFilter,
   type TimelineItem,
   type TimelineStats,
@@ -30,6 +31,8 @@ type JournalViewProps = {
   initialMonth?: string;
   currentMonth: string;
   initialQuery?: string;
+  /** P1-1：历史同日日记（仅首屏传入） */
+  onThisDay?: OnThisDayItem[];
 };
 
 const FILTERS: { id: TimelineFilter; label: string }[] = [
@@ -50,6 +53,7 @@ export function JournalView({
   initialMonth,
   currentMonth,
   initialQuery = "",
+  onThisDay = [],
 }: JournalViewProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<TimelineFilter>(initialFilter);
@@ -181,6 +185,41 @@ export function JournalView({
           </div>
         }
       >
+        {onThisDay.length > 0 && items.length > 0 && filter === "all" && !query.trim() ? (
+          <section className="mb-8">
+            <h2 className="mb-3 font-display text-[20px] text-ink-secondary">
+              🎲 去年的今天
+            </h2>
+            <ul className="divide-y divide-line rounded-[var(--radius-md)] border border-line bg-white/25 px-4">
+              {onThisDay.map((o) => (
+                <li key={o.id}>
+                  <Link
+                    href={`/journal/${o.id}`}
+                    className="flex items-baseline gap-3 py-3 transition-colors hover:bg-white/30"
+                  >
+                    <span className="shrink-0 text-[12px] font-medium tracking-[0.04em] text-brand">
+                      {o.yearsAgo} 年前
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-medium text-ink">
+                        {o.title || o.bodyPreview}
+                      </span>
+                      {o.title ? (
+                        <span className="mt-0.5 block truncate text-[12px] text-ink-secondary">
+                          {o.bodyPreview}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 text-[12px] text-ink-tertiary">
+                      {formatDayShort(o.day)}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         {items.length === 0 ? (
           <div className="glass-panel flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
             <p className="font-display text-[22px] text-ink-secondary">

@@ -39,6 +39,7 @@ export default async function JournalPage({ searchParams }: Props) {
       initialMonth={month || data.currentMonth}
       currentMonth={data.currentMonth}
       initialQuery={data.q}
+      onThisDay={data.onThisDay}
     />
   );
 }

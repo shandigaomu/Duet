@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Instrument_Serif, Manrope } from "next/font/google";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ErrorReporter } from "@/components/error/ErrorReporter";
+import { SwRegister } from "@/components/push/SwRegister";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -30,6 +31,23 @@ export const metadata: Metadata = {
     template: "%s · Duet",
   },
   description: "两人共用的生活日志与同步台",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Duet",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1f4a45",
 };
 
 const themeBoot = `(function(){try{var k='duet.theme';var p=localStorage.getItem(k)||'system';var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=p==='dark'||(p==='system'&&d)?'dark':'light';document.documentElement.classList.toggle('dark',r==='dark');document.documentElement.style.colorScheme=r;}catch(e){}})();`;
@@ -47,6 +65,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full font-sans text-ink">
         <ThemeProvider>{children}</ThemeProvider>
         <ErrorReporter />
+        <SwRegister />
       </body>
     </html>
   );

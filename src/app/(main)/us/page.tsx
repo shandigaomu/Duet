@@ -10,6 +10,7 @@ export default async function UsPage() {
       openListCount={data.openListCount}
       photoCount={data.photoCount}
       noteCount={data.noteCount}
+      letterCount={data.letterCount}
     />
   );
 }

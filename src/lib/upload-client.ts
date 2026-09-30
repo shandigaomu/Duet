@@ -4,12 +4,44 @@ import type { UploadKind } from "@/lib/storage";
 export async function uploadImageFile(
   file: File,
   kind: UploadKind,
+  onProgress?: (pct: number) => void,
 ): Promise<{ url: string }> {
   // P0-0：上传前压缩（原图过大时显著省流量）；失败自动回退原图
   const prepared = kind === "avatar" ? file : await compressImage(file);
   const body = new FormData();
   body.set("file", prepared);
   body.set("kind", kind);
+
+  // P1-4：需要进度回调时走 XHR（fetch 无上传进度）
+  if (onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+      xhr.onload = () => {
+        try {
+          const data = JSON.parse(xhr.responseText) as {
+            ok?: boolean;
+            url?: string;
+            error?: string;
+          };
+          if (xhr.status >= 200 && xhr.status < 300 && data.ok && data.url) {
+            resolve({ url: data.url });
+          } else {
+            reject(new Error(data.error || "上传失败"));
+          }
+        } catch {
+          reject(new Error("上传失败"));
+        }
+      };
+      xhr.onerror = () => reject(new Error("网络错误，上传失败"));
+      xhr.send(body);
+    });
+  }
 
   const res = await fetch("/api/upload", {
     method: "POST",

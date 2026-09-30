@@ -10,6 +10,8 @@ import {
   type ListItemDTO,
 } from "@/lib/list";
 import { shanghaiDay } from "@/lib/space";
+import { sendEventEmail } from "@/server/mail";
+import { pushListDone, pushToPartner } from "@/server/push";
 
 type MembershipCtx = Awaited<ReturnType<typeof requirePaired>>;
 
@@ -74,11 +76,12 @@ export async function loadUsOverview(): Promise<{
   openListCount: number;
   photoCount: number;
   noteCount: number;
+  letterCount: number;
 }> {
   const ctx = await requirePaired();
   const spaceId = ctx.membership.spaceId;
   const userId = ctx.user.id;
-  const [openListCount, photoCount, noteCount] = await Promise.all([
+  const [openListCount, photoCount, noteCount, letterCount] = await Promise.all([
     prisma.listItem.count({ where: { spaceId, status: "open" } }),
     prisma.entryImage.count({
       where: {
@@ -89,10 +92,11 @@ export async function loadUsOverview(): Promise<{
       },
     }),
     prisma.note.count({
-      where: { spaceId, parentId: null },
+      where: { spaceId, parentId: null, deletedAt: null },
     }),
+    prisma.letter.count({ where: { spaceId } }),
   ]);
-  return { openListCount, photoCount, noteCount };
+  return { openListCount, photoCount, noteCount, letterCount };
 }
 
 export async function createListItemAction(input: {
@@ -151,6 +155,18 @@ export async function completeListItemAction(input: {
   revalidatePath("/us/lists");
   revalidatePath("/journal");
   revalidatePath("/today");
+
+  // V3-N1：清单完成 → 通知对方
+  const partner = ctx.membership.space.members.find(
+    (m) => m.userId !== ctx.user.id,
+  );
+  pushToPartner(
+    partner?.userId,
+    ctx.user.id,
+    pushListDone(ctx.membership.nickname, existing.title),
+  );
+  sendEventEmail(partner?.userId, ctx.user.id, ctx.membership.nickname, "list");
+
   return { ok: true };
 }
 

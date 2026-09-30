@@ -60,6 +60,10 @@ export type DayMarkActionResult = {
   mark?: DayMarkDTO;
 };
 
+export type LoadDaysPageResult = Awaited<
+  ReturnType<typeof loadDaysPage>
+>;
+
 export async function loadDaysPage(opts?: {
   month?: string;
   selectedDay?: string;
@@ -74,6 +78,12 @@ export async function loadDaysPage(opts?: {
   partnerNickname: string;
   /** P0-2：系统合成的只读「在一起」周年标记（未设置纪念日时为 null） */
   anniversaryMark: DayMarkDTO | null;
+  /** P2-N1：当月心情点（每条含 day/side/mood） */
+  moodDots: Array<{
+    day: string;
+    side: "me" | "you";
+    mood: "happy" | "ok" | "sad" | null;
+  }>;
 }> {
   const ctx = await requirePaired();
   const today = shanghaiDay();
@@ -94,6 +104,22 @@ export async function loadDaysPage(opts?: {
     where: { spaceId },
     orderBy: [{ day: "asc" }, { createdAt: "asc" }],
   });
+
+  // P2-N1：当月 CheckIn 心情（心情月历色点）
+  const monthStart = `${month}-01`;
+  const [y, mo] = month.split("-").map(Number);
+  const monthEnd = new Date(Date.UTC(y!, mo!, 1) - 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const monthCheckIns = await prisma.checkIn.findMany({
+    where: { spaceId, day: { gte: monthStart, lte: monthEnd } },
+    select: { day: true, authorId: true, mood: true },
+  });
+  const moodDots = monthCheckIns.map((c) => ({
+    day: c.day,
+    side: (c.authorId === ctx.user.id ? "me" : "you") as "me" | "you",
+    mood: (c.mood as "happy" | "ok" | "sad" | null) ?? null,
+  }));
 
   let dtos: DayMarkDTO[] = all.map((r) => toDTO(r, ctx, today));
 
@@ -149,6 +175,8 @@ export async function loadDaysPage(opts?: {
     past,
     partnerNickname: partnerOf(ctx)?.nickname ?? "你",
     anniversaryMark,
+    /** P2-N1：当月心情点（每条含 day/side/mood） */
+    moodDots,
   };
 }
 

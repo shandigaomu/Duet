@@ -1,9 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { DevPanel } from "@/components/me/DevPanel";
 import { EditProfileSheet } from "@/components/me/EditProfileSheet";
+import {
+  EmailToggle,
+  PushToggle,
+} from "@/components/push/PushToggle";
+import { TimeZonePicker } from "@/components/me/TimeZonePicker";
+import { AppLockPanel } from "@/components/me/AppLockPanel";
 import { ThemePicker } from "@/components/theme/ThemeProvider";
 import type { ErrorLogDTO } from "@/server/error-actions";
 import { Button } from "@/components/ui/Button";
@@ -24,6 +31,8 @@ type MeSettingsProps = {
   anniversaryDay: string | null;
   recentErrors: ErrorLogDTO[];
   errorTotal: number;
+  timeZone: string | null;
+  appLock: { enabled: boolean; unlocked: boolean };
 };
 
 export function MeSettings({
@@ -37,6 +46,8 @@ export function MeSettings({
   anniversaryDay: initialAnniversary,
   recentErrors,
   errorTotal,
+  timeZone,
+  appLock,
 }: MeSettingsProps) {
   const router = useRouter();
   const [nickname, setNickname] = useState(initialNickname);
@@ -51,6 +62,8 @@ export function MeSettings({
     initialAnniversary ?? "",
   );
   const [spaceSaved, setSpaceSaved] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
 
   async function logout() {
     await authClient.signOut();
@@ -62,6 +75,35 @@ export function MeSettings({
     await navigator.clipboard.writeText(inviteCode);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  // V3-F2：打包全部数据为 zip 下载（含图片，量大时需等待）
+  async function exportData() {
+    if (exporting) return;
+    setError(null);
+    setExporting(true);
+    setExportDone(false);
+    try {
+      const res = await fetch("/api/export");
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename="?([^";]+)"?/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = match?.[1] ?? "duet-export.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setExportDone(true);
+      window.setTimeout(() => setExportDone(false), 3000);
+    } catch {
+      setError("导出失败，请稍后再试");
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function saveSpaceInfo() {
@@ -180,6 +222,8 @@ export function MeSettings({
                 <span className="text-[12px] text-brand">已保存</span>
               ) : null}
             </div>
+            <TimeZonePicker initial={timeZone} />
+            <AppLockPanel enabled={appLock.enabled} unlocked={appLock.unlocked} />
           </div>
         </section>
 
@@ -190,6 +234,16 @@ export function MeSettings({
           <p className="mt-1 text-[13px] text-ink-secondary">主题</p>
           <div className="mt-3">
             <ThemePicker />
+          </div>
+        </section>
+
+        <section className="glass-panel p-5">
+          <h2 className="text-[12px] font-medium tracking-[0.04em] text-ink-tertiary">
+            通知
+          </h2>
+          <div className="mt-1 divide-y divide-line">
+            <PushToggle />
+            <EmailToggle email={email} />
           </div>
         </section>
 
@@ -208,6 +262,31 @@ export function MeSettings({
               </button>
             </li>
             <li>
+              <Link
+                href="/me/trash"
+                className="flex w-full items-center justify-between py-3 text-[15px] text-ink hover:text-brand"
+              >
+                回收站
+                <span className="text-[12px] text-ink-tertiary">
+                  30 天内可恢复
+                </span>
+              </Link>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="w-full py-3 text-left text-[15px] text-ink hover:text-brand disabled:cursor-wait disabled:text-ink-tertiary"
+                onClick={exportData}
+                disabled={exporting}
+              >
+                {exporting
+                  ? "正在打包…（含图片，请稍候）"
+                  : exportDone
+                    ? "已下载 ✓"
+                    : "导出数据（zip）"}
+              </button>
+            </li>
+            <li>
               <button
                 type="button"
                 onClick={logout}
@@ -217,6 +296,9 @@ export function MeSettings({
               </button>
             </li>
           </ul>
+          <p className="mt-2 text-[12px] text-ink-tertiary">
+            打包日记、今日同步、日子、清单、悄悄话与图片，私密日记仅包含你自己的。
+          </p>
         </section>
 
         <section className="glass-panel p-5 md:col-span-2">

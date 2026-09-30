@@ -1,13 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { Heart, ImageIcon, ListTodo, MessageCircle } from "lucide-react";
+import {
+  Heart,
+  ImageIcon,
+  ListTodo,
+  Mail,
+  MessageCircle,
+} from "lucide-react";
 import { Workbench } from "@/components/shell/Workbench";
 
 type UsOverviewProps = {
   openListCount: number;
   photoCount: number;
   noteCount: number;
+  letterCount: number;
 };
 
 const LINKS = [
@@ -32,26 +39,35 @@ const LINKS = [
     icon: MessageCircle,
     key: "notes" as const,
   },
+  {
+    href: "/us/letters",
+    label: "时光信",
+    hint: (n: number) => (n > 0 ? `${n} 封信` : "写给未来"),
+    icon: Mail,
+    key: "letters" as const,
+  },
 ];
 
 export function UsOverview({
   openListCount,
   photoCount,
   noteCount,
+  letterCount,
 }: UsOverviewProps) {
   const counts = {
     list: openListCount,
     album: photoCount,
     notes: noteCount,
+    letters: letterCount,
   };
 
   return (
     <Workbench
       eyebrow="Us · Together"
       title="我们"
-      description="共同清单、相册与悄悄话。日子在「记录」里。"
+      description="共同清单、相册、悄悄话与时光信。日子在「记录」里。"
     >
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {LINKS.map((item) => {
           const Icon = item.icon;
           return (

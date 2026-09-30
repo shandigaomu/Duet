@@ -2,14 +2,16 @@ import { Workbench } from "@/components/shell/Workbench";
 import { MeSettings } from "@/components/me/MeSettings";
 import { requirePaired } from "@/lib/guards";
 import { loadRecentErrors } from "@/server/error-actions";
+import { loadAppLockState } from "@/server/lock-actions";
 
 export const metadata = { title: "我的" };
 
 export default async function MePage() {
   const { user, membership } = await requirePaired();
-  const [members, recentErrors] = await Promise.all([
+  const [members, recentErrors, appLock] = await Promise.all([
     Promise.resolve(membership.space.members),
     loadRecentErrors(),
+    loadAppLockState(),
   ]);
   const partner = members.find((m) => m.userId !== user.id);
 
@@ -36,6 +38,8 @@ export default async function MePage() {
         anniversaryDay={membership.space.anniversaryDay ?? null}
         recentErrors={recentErrors.errors}
         errorTotal={recentErrors.total}
+        timeZone={membership.timeZone ?? null}
+        appLock={appLock}
       />
     </Workbench>
   );

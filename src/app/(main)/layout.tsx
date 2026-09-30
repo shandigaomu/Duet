@@ -7,8 +7,14 @@ export default async function MainLayout({
   children: React.ReactNode;
 }) {
   const { membership } = await requirePaired();
+  const partner = membership.space.members.find(
+    (m) => m.userId !== membership.userId,
+  );
   return (
-    <MainShell spaceName={membership.space.name ?? null}>
+    <MainShell
+      spaceName={membership.space.name ?? null}
+      partnerNickname={partner?.nickname ?? null}
+    >
       {children}
     </MainShell>
   );

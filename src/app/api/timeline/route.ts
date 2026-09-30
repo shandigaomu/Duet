@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       ok: true,
       items: data.items,
       nextCursor: data.nextCursor,
+      onThisDay: data.onThisDay,
     });
   } catch (e) {
     // 未登录时 requirePaired 抛 NEXT_REDIRECT，交回框架处理（307 → /login）

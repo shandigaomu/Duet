@@ -7,6 +7,12 @@ import { requirePaired } from "@/lib/guards";
 import { shanghaiDay } from "@/lib/space";
 import type { CheckIn, MoodId } from "@/lib/checkin";
 import { LINE_MAX, NOTE_MAX } from "@/lib/checkin";
+import { sendEventEmail } from "@/server/mail";
+import {
+  pushCheckinUpdated,
+  pushHugReceived,
+  pushToPartner,
+} from "@/server/push";
 
 function toClientCheckIn(row: {
   mood: string | null;
@@ -38,10 +44,28 @@ export async function loadTodayCheckIns() {
 
   const mineRow = rows.find((r) => r.authorId === user.id) ?? null;
   let yoursRow = partner
-    ? rows.find((r) => r.authorId === partner.userId) ?? null
+    ? (rows.find((r) => r.authorId === partner.userId) ?? null)
+    : null;
+  const partnerWasUnread = Boolean(yoursRow && !yoursRow.partnerReadAt);
+
+  // P2-N2：抱抱状态（今天这条 CheckIn 上的互动）
+  const mineId = mineRow?.id ?? null;
+  const yoursId = yoursRow?.id ?? null;
+  const checkInIds = [mineId, yoursId].filter((x): x is string => Boolean(x));
+  const hugs = checkInIds.length
+    ? await prisma.checkInHug.findMany({
+        where: { checkInId: { in: checkInIds } },
+      })
+    : [];
+  const partnerHugOnMine = mineId
+    ? (hugs.find((h) => h.checkInId === mineId && h.giverId !== user.id) ??
+      null)
+    : null;
+  const myHugOnYours = yoursId
+    ? (hugs.find((h) => h.checkInId === yoursId && h.giverId === user.id) ??
+      null)
     : null;
 
-  const partnerWasUnread = Boolean(yoursRow && !yoursRow.partnerReadAt);
 
   // B5：打开今日且对方有内容 → 标记对方条目已读
   if (yoursRow && !yoursRow.partnerReadAt) {
@@ -58,7 +82,50 @@ export async function loadTodayCheckIns() {
     partnerWasUnread,
     partnerNickname: partner?.nickname ?? "你",
     myNickname: membership.nickname,
+    /** P2-N2：对方今天抱过我（+时间，当天有效） */
+    hugFromPartner: partnerHugOnMine
+      ? { at: partnerHugOnMine.createdAt.toISOString() }
+      : null,
+    /** P2-N2：我今天是否已抱过对方 */
+    hugGivenByMe: Boolean(myHugOnYours),
   };
+}
+
+/** P2-N2：给对方的今日一个抱抱（每天每条限一次，唯一约束兜底） */
+export async function hugTodayAction(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const { user, membership } = await requirePaired();
+  const partner = membership.space.members.find(
+    (m) => m.userId !== user.id,
+  );
+  if (!partner) return { ok: false, error: "还未配对" };
+
+  const target = await prisma.checkIn.findUnique({
+    where: {
+      spaceId_authorId_day: {
+        spaceId: membership.spaceId,
+        authorId: partner.userId,
+        day: shanghaiDay(),
+      },
+    },
+  });
+  if (!target) return { ok: false, error: "TA 今天还没同步" };
+
+  try {
+    await prisma.checkInHug.create({
+      data: { checkInId: target.id, giverId: user.id },
+    });
+  } catch {
+    // 唯一约束冲突 = 已抱过，幂等成功
+    return { ok: true };
+  }
+
+  // V3-N1：被抱抱通知（一天最多提一次——数据库层唯一约束天然限流）
+  pushToPartner(partner.userId, user.id, pushHugReceived(membership.nickname));
+  revalidatePath("/today");
+  return { ok: true };
 }
 
 const saveSchema = z.object({
@@ -82,6 +149,7 @@ export async function saveTodayCheckInAction(input: {
 }): Promise<SaveCheckInResult> {
   const { user, membership } = await requirePaired();
   const day = shanghaiDay();
+  const partner = membership.space.members.find((m) => m.userId !== user.id);
 
   // 允许 http(s) 与本地 /api/files 路径
   const imageUrl =
@@ -134,5 +202,14 @@ export async function saveTodayCheckInAction(input: {
   });
 
   revalidatePath("/today");
+
+  // V3-N1/N2：通知对方（推送 + 可选邮件）
+  pushToPartner(
+    partner?.userId,
+    user.id,
+    pushCheckinUpdated(membership.nickname),
+  );
+  sendEventEmail(partner?.userId, user.id, membership.nickname, "checkin");
+
   return { ok: true, checkIn: toClientCheckIn(row) };
 }

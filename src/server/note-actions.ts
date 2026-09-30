@@ -68,7 +68,11 @@ export async function loadNotes(): Promise<{
 }> {
   const ctx = await requirePaired();
   const rows = await prisma.note.findMany({
-    where: { spaceId: ctx.membership.spaceId, parentId: null },
+    where: {
+      spaceId: ctx.membership.spaceId,
+      parentId: null,
+      deletedAt: null,
+    },
     include: { replies: true },
     orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
   });
@@ -155,8 +159,13 @@ export async function deleteNoteAction(
   if (existing.authorId !== ctx.user.id) {
     return { ok: false, error: "只能删除自己的留言" };
   }
-  await prisma.note.delete({ where: { id } });
+  // P2-N5：两段式删除——软删进回收站，30 天后物理清理
+  await prisma.note.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
   revalidatePath("/us");
   revalidatePath("/us/notes");
+  revalidatePath("/me/trash");
   return { ok: true };
 }

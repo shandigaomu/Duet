@@ -24,6 +24,7 @@ export default async function JournalDaysPage({ searchParams }: Props) {
       dayMarks={data.dayMarks}
       upcoming={data.upcoming}
       past={data.past}
+      moodDots={data.moodDots}
     />
   );
 }

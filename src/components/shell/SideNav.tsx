@@ -2,15 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { QuickNoteButton } from "@/components/us/QuickNoteSheet";
 import { MAIN_NAV } from "@/lib/nav";
 import { cn } from "@/lib/cn";
 
 type SideNavProps = {
   /** P0-2：空间名（未设置显示 Duet） */
   spaceName?: string | null;
+  /** P2-N7：对方昵称（悄悄话入口 title） */
+  partnerNickname?: string | null;
 };
 
-export function SideNav({ spaceName }: SideNavProps) {
+export function SideNav({ spaceName, partnerNickname }: SideNavProps) {
   const pathname = usePathname();
 
   return (
@@ -48,9 +51,13 @@ export function SideNav({ spaceName }: SideNavProps) {
         })}
       </nav>
 
-      <div className="mt-auto rounded-[14px] bg-white/25 px-3 py-3 text-[12px] leading-relaxed text-ink-secondary">
-        <p className="font-medium text-ink">今日工作台</p>
-        <p className="mt-1">同步近况、翻记录、管理配对。</p>
+      <div className="mt-auto flex items-end gap-2">
+        <div className="flex-1 rounded-[14px] bg-white/25 px-3 py-3 text-[12px] leading-relaxed text-ink-secondary">
+          <p className="font-medium text-ink">今日工作台</p>
+          <p className="mt-1">同步近况、翻记录、管理配对。</p>
+        </div>
+        {/* P2-N7：悄悄话全局入口（桌面在侧栏底部同位） */}
+        <QuickNoteButton partnerNickname={partnerNickname ?? "TA"} />
       </div>
     </aside>
   );

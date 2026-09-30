@@ -27,7 +27,20 @@ type DaysViewProps = {
   dayMarks: DayMarkDTO[];
   upcoming: DayMarkDTO[];
   past: DayMarkDTO[];
+  /** P2-N1：当月心情点（心情月历） */
+  moodDots?: Array<{
+    day: string;
+    side: "me" | "you";
+    mood: "happy" | "ok" | "sad" | null;
+  }>;
 };
+
+/** 心情三档 → 点在格子内的纵向位置（上/中/下） */
+function moodPosition(mood: "happy" | "ok" | "sad" | null) {
+  if (mood === "happy") return "top-[18%]";
+  if (mood === "sad") return "bottom-[18%]";
+  return "top-1/2 -translate-y-1/2";
+}
 
 export function DaysView({
   month: initialMonth,
@@ -37,6 +50,7 @@ export function DaysView({
   dayMarks,
   upcoming,
   past,
+  moodDots = [],
 }: DaysViewProps) {
   const router = useRouter();
   const [month, setMonth] = useState(initialMonth);
@@ -48,6 +62,17 @@ export function DaysView({
 
   const marked = new Set(markedDays);
   const grid = buildMonthGrid(month);
+
+  // P2-N1：按日聚合心情点
+  const moodByDay = new Map<
+    string,
+    Array<{ side: "me" | "you"; mood: "happy" | "ok" | "sad" | null }>
+  >();
+  for (const dot of moodDots) {
+    const list = moodByDay.get(dot.day) ?? [];
+    list.push({ side: dot.side, mood: dot.mood });
+    moodByDay.set(dot.day, list);
+  }
 
   function navigate(nextMonth: string, nextDay: string) {
     setMonth(nextMonth);
@@ -134,6 +159,15 @@ export function DaysView({
       >
         <div className={cn("space-y-8", pending && "opacity-70")}>
           <div className="glass-panel p-3 md:p-4">
+            <p className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-ink-tertiary">
+              <span className="inline-flex items-center gap-1">
+                <span className="size-1.5 rounded-full bg-me" aria-hidden /> 我的今日心情
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="size-1.5 rounded-full bg-you" aria-hidden /> TA 的今日心情
+              </span>
+              <span>点的高低 = 心情三档 · 空心 = 没选心情</span>
+            </p>
             <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[11px] tracking-[0.04em] text-ink-tertiary">
               {["一", "二", "三", "四", "五", "六", "日"].map((w) => (
                 <span key={w}>{w}</span>
@@ -147,6 +181,7 @@ export function DaysView({
                 const isSelected = cell.day === selectedDay;
                 const isToday = cell.day === today;
                 const hasMark = marked.has(cell.day);
+                const dayMoods = moodByDay.get(cell.day) ?? [];
                 return (
                   <button
                     key={cell.day}
@@ -169,6 +204,30 @@ export function DaysView({
                           isSelected ? "bg-white/90" : "bg-brand",
                         )}
                       />
+                    ) : null}
+                    {/* P2-N1：心情点层（me 左 you 右，心情三档定高度，空心情空心圈） */}
+                    {dayMoods.length > 0 ? (
+                      <span className="pointer-events-none absolute inset-x-1.5 inset-y-1.5">
+                        {dayMoods.slice(0, 2).map((m, idx) => (
+                          <span
+                            key={idx}
+                            className={cn(
+                              "absolute size-1.5 rounded-full",
+                              idx === 0 ? "left-0" : "right-0",
+                              moodPosition(m.mood),
+                              isSelected
+                                ? "bg-white/90"
+                                : m.side === "me"
+                                  ? "bg-me"
+                                  : "bg-you",
+                              m.mood === null && !isSelected
+                                ? "border border-current bg-transparent opacity-60"
+                                : null,
+                            )}
+                            aria-hidden
+                          />
+                        ))}
+                      </span>
                     ) : null}
                   </button>
                 );

@@ -82,6 +82,15 @@ export type TimelineStats = {
   month: number;
 };
 
+/** P1-1 那年今日：历史同日日记（最多 3 条，同年多条取最新） */
+export type OnThisDayItem = {
+  id: string;
+  day: string;
+  yearsAgo: number;
+  title: string | null;
+  bodyPreview: string;
+};
+
 /** 3.18 */
 export function formatDayShort(day: string) {
   const [, m, d] = day.split("-");
@@ -136,4 +145,51 @@ export function shanghaiWeekRange(date = new Date()): {
     return `${yy}-${mm}-${dd}`;
   };
   return { start: fmt(startMs), end: fmt(endMs) };
+}
+
+/** P1-1：今天月日（MM-DD），Asia/Shanghai */
+export function shanghaiMonthDay(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/**
+ * P1-1：从历史同日行归并为最多 limit 条（每年取最新一条，按年份差降序=最近年份在前）。
+ * 输入行需含 id/day/title/body；day 均以 -MM-DD 结尾且早于今年。
+ */
+export type OnThisDayRow = {
+  id: string;
+  day: string;
+  title: string | null;
+  body: string;
+};
+
+export function pickOnThisDay(
+  rows: OnThisDayRow[],
+  today: string,
+  limit = 3,
+): OnThisDayItem[] {
+  const byYear = new Map<number, OnThisDayRow>();
+  for (const r of rows) {
+    const y = Number(r.day.slice(0, 4));
+    if (!y || y >= Number(today.slice(0, 4))) continue;
+    const prev = byYear.get(y);
+    // 同年多条取最新（day 更大者；day 相同取 id 较大保证稳定）
+    if (!prev || r.day > prev.day || (r.day === prev.day && r.id > prev.id)) {
+      byYear.set(y, r);
+    }
+  }
+  return [...byYear.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, limit)
+    .map(([year, r]) => ({
+      id: r.id,
+      day: r.day,
+      yearsAgo: Number(today.slice(0, 4)) - year,
+      title: r.title,
+      bodyPreview: previewBody(r.body, 48),
+    }));
 }

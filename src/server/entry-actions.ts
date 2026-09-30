@@ -11,16 +11,21 @@ import {
   REACTION_EMOJIS,
   TITLE_MAX,
   previewBody,
+  pickOnThisDay,
   shanghaiMonth,
+  shanghaiMonthDay,
   shanghaiWeekRange,
   type CheckInSnapshotItem,
   type EntryDTO,
   type EntryListItem,
+  type OnThisDayItem,
   type TimelineFilter,
   type TimelineItem,
   type TimelineStats,
 } from "@/lib/journal";
 import { shanghaiDay } from "@/lib/space";
+import { sendEventEmail } from "@/server/mail";
+import { pushEntryCreated, pushToPartner } from "@/server/push";
 
 type MembershipCtx = Awaited<ReturnType<typeof requirePaired>>;
 
@@ -96,10 +101,20 @@ function toEntryDTO(
   };
 }
 
+/**
+ * 可见性 + 未删除 + 未在合写 pending（P2-N5/N8：单一封装点，所有查询都走这里防漏）。
+ * pending 合写仅出现在今日页邀请卡，不进时间线/相册/统计。
+ */
 function entryVisibleWhere(userId: string) {
   return {
     OR: [{ visibility: "shared" }, { authorId: userId }],
+    deletedAt: null,
+    collabStatus: { not: "pending" },
   };
+}
+
+function currentYear() {
+  return shanghaiDay().slice(0, 4);
 }
 
 function persistableUrls(urls: string[] | undefined): string[] {
@@ -159,6 +174,8 @@ export async function loadTimeline(opts?: {
   myNickname: string;
   currentMonth: string;
   q: string;
+  /** P1-1：历史同日日记（仅首屏返回，分页页为空数组） */
+  onThisDay: OnThisDayItem[];
 }> {
   const ctx = await requirePaired();
   const filter = opts?.filter ?? "all";
@@ -219,7 +236,7 @@ export async function loadTimeline(opts?: {
     ...(cursor ? { day: { lt: cursor } } : {}),
   };
 
-  const [entryRows, checkInRows, total, mine, yours, monthCount] =
+  const [entryRows, checkInRows, total, mine, yours, monthCount, onThisDayRows] =
     await Promise.all([
       prisma.entry.findMany({
         where: entryWhere,
@@ -261,6 +278,21 @@ export async function loadTimeline(opts?: {
           ],
         },
       }),
+      // P1-1：历史同日日记（仅首屏查询；分页页不再重复带）
+      cursor
+        ? Promise.resolve([])
+        : prisma.entry.findMany({
+            where: {
+              spaceId,
+              AND: [
+                entryVisibleWhere(ctx.user.id),
+                { day: { endsWith: `-${shanghaiMonthDay()}`, lt: `${currentYear()}-01-01` } },
+              ],
+            },
+            select: { id: true, day: true, title: true, body: true },
+            orderBy: { day: "desc" },
+            take: 30,
+          }),
     ]);
 
   const stats: TimelineStats = { total, mine, yours, month: monthCount };
@@ -353,7 +385,27 @@ export async function loadTimeline(opts?: {
     myNickname: ctx.membership.nickname,
     currentMonth,
     q,
+    onThisDay: pickOnThisDay(onThisDayRows, shanghaiDay(), 3),
   };
+}
+
+/** P1-1：今日页「x 年前的今天」提示（最多 1 条，取最近年份） */
+export async function loadTodayOnThisDay(): Promise<OnThisDayItem | null> {
+  const ctx = await requirePaired();
+  const today = shanghaiDay();
+  const rows = await prisma.entry.findMany({
+    where: {
+      spaceId: ctx.membership.spaceId,
+      AND: [
+        entryVisibleWhere(ctx.user.id),
+        { day: { endsWith: `-${shanghaiMonthDay()}`, lt: `${today.slice(0, 4)}-01-01` } },
+      ],
+    },
+    select: { id: true, day: true, title: true, body: true },
+    orderBy: { day: "desc" },
+    take: 30,
+  });
+  return pickOnThisDay(rows, today, 1)[0] ?? null;
 }
 
 export async function getEntryById(id: string): Promise<EntryDTO | null> {
@@ -429,6 +481,23 @@ export async function createEntryAction(input: {
   revalidatePath("/today");
   revalidatePath("/us");
   revalidatePath("/us/album");
+
+  // V3-N1：新日记（含私密）→ 通知对方；私密标题不外泄，文案降级
+  const partner = ctx.membership.space.members.find(
+    (m) => m.userId !== ctx.user.id,
+  );
+  pushToPartner(
+    partner?.userId,
+    ctx.user.id,
+    pushEntryCreated(
+      ctx.membership.nickname,
+      parsed.data.visibility === "private" ? null : title,
+    ),
+  );
+  if (parsed.data.visibility !== "private") {
+    sendEventEmail(partner?.userId, ctx.user.id, ctx.membership.nickname, "entry");
+  }
+
   return { ok: true, entry: toEntryDTO(row, ctx) };
 }
 
@@ -507,9 +576,14 @@ export async function deleteEntryAction(
     return { ok: false, error: "只能删除自己的日记" };
   }
 
-  await prisma.entry.delete({ where: { id } });
+  // P2-N5：两段式删除——软删进回收站，30 天后物理清理
+  await prisma.entry.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
   revalidatePath("/journal");
   revalidatePath("/today");
+  revalidatePath("/me/trash");
   return { ok: true };
 }
 
