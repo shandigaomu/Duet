@@ -6,7 +6,8 @@ import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
 import { shanghaiDay } from "@/lib/space";
 import type { CheckIn, MoodId } from "@/lib/checkin";
-import { LINE_MAX, NOTE_MAX } from "@/lib/checkin";
+import { LINE_MAX, NOTE_MAX, recentWeekStarts, streakBadge } from "@/lib/checkin";
+import { shanghaiWeekStart } from "@/lib/journal";
 import { sendEventEmail } from "@/server/mail";
 import {
   pushCheckinUpdated,
@@ -75,6 +76,21 @@ export async function loadTodayCheckIns() {
     });
   }
 
+  // P3-T10：近 6 周记录徽章（达不成安静消失）
+  const thisWeekStart = shanghaiWeekStart();
+  const sixWeeksAgo = recentWeekStarts(thisWeekStart, 6)[0]!;
+  const recentRows = await prisma.checkIn.findMany({
+    where: { spaceId, day: { gte: sixWeeksAgo } },
+    select: { day: true, authorId: true },
+  });
+  const badge = streakBadge({
+    days: recentRows.map((r) => ({
+      day: r.day,
+      authorIsMe: r.authorId === user.id,
+    })),
+    thisWeekStart,
+  });
+
   return {
     day,
     mine: mineRow ? toClientCheckIn(mineRow) : null,
@@ -88,6 +104,8 @@ export async function loadTodayCheckIns() {
       : null,
     /** P2-N2：我今天是否已抱过对方 */
     hugGivenByMe: Boolean(myHugOnYours),
+    /** P3-T10：记录徽章（null = 达不成，安静消失） */
+    streakBadge: badge,
   };
 }
 

@@ -48,12 +48,14 @@ function shell(title: string, inner: string) {
   </div></body></html>`;
 }
 
-type MailKind = "checkin" | "entry" | "list";
+type MailKind = "checkin" | "entry" | "list" | "collab-invite" | "collab-done";
 
 const KIND_TEXT: Record<MailKind, string> = {
   checkin: "更新了今日",
   entry: "写了一篇新日记",
   list: "完成了清单里的一个小愿望",
+  "collab-invite": "想邀你合写一篇日记",
+  "collab-done": "写好了 TA 那一段合写",
 };
 
 /** 即时事件邮件：默认关闭（NotifyPref.emailEnabled），偏好缺失不发送 */
@@ -96,6 +98,10 @@ export type WeeklySummaryData = {
   checkInDays: number;
   entryCount: number;
   nearDaymarks: Array<{ title: string; day: string }>;
+  /** P3-T2：上周 TA 回应了我的日记数（0 时不渲染） */
+  reactionsFromPartner: number;
+  /** P3-T2：上周 TA 抱抱我的次数（0 时不渲染） */
+  hugsFromPartner: number;
 };
 
 /** 每周一 9:00 摘要邮件（emailWeekly 开启者） */
@@ -120,6 +126,18 @@ export async function sendWeeklySummaryEmail(
           .join("")}</ul>`
       : `<p style="margin:8px 0 0;font-size:14px;color:#7d8c88;">最近 14 天没有临近的日子</p>`;
 
+  // P3-T2：加温度行（0 不渲染，不凑数）
+  const warmLines: string[] = [];
+  if (data.reactionsFromPartner > 0) {
+    warmLines.push(`💌 TA 回应了你 ${data.reactionsFromPartner} 篇日记`);
+  }
+  if (data.hugsFromPartner > 0) {
+    warmLines.push(`🫂 你们互给了 ${data.hugsFromPartner} 个抱抱`);
+  }
+  const warm = warmLines.length
+    ? `<p style="margin:10px 0 0;font-size:14px;line-height:1.9;color:#5c6f6a;">${warmLines.join("<br/>")}</p>`
+    : "";
+
   await mailer().sendMail({
     from: fromAddress(),
     to: user.email,
@@ -130,6 +148,7 @@ export async function sendWeeklySummaryEmail(
         data.nickname,
       )}，上周你们一起记下了——</p>
        <p style="margin:12px 0 0;font-size:14px;line-height:1.9;">📝 日记 <b>${data.entryCount}</b> 篇 · 🌤 同步 <b>${data.checkInDays}</b> 天</p>
+       ${warm}
        <p style="margin:18px 0 0;font-size:13px;color:#7d8c88;">临近的日子</p>
        ${near}`,
     ),
@@ -170,16 +189,39 @@ export async function collectWeeklySummary(
   const start = fmt(lastMonday);
   const end = fmt(thisMonday - 86_400_000);
 
-  const [checkIns, entries, dayMarks] = await Promise.all([
-    prisma.checkIn.findMany({
-      where: { spaceId, day: { gte: start, lte: end } },
-      select: { authorId: true, day: true },
-    }),
-    prisma.entry.count({
-      where: { spaceId, day: { gte: start, lte: end }, deletedAt: null },
-    }),
-    prisma.dayMark.findMany({ where: { spaceId }, orderBy: { day: "asc" } }),
-  ]);
+  const [checkIns, entries, dayMarks, reactionsFromPartner, hugsFromPartner] =
+    await Promise.all([
+      prisma.checkIn.findMany({
+        where: { spaceId, day: { gte: start, lte: end } },
+        select: { authorId: true, day: true },
+      }),
+      prisma.entry.count({
+        where: { spaceId, day: { gte: start, lte: end }, deletedAt: null },
+      }),
+      prisma.dayMark.findMany({ where: { spaceId }, orderBy: { day: "asc" } }),
+      // P3-T2：上周 TA 回应我的日记数（只统计对方给到我的）
+      prisma.entryReaction.count({
+        where: {
+          createdAt: {
+            gte: new Date(`${start}T00:00:00+08:00`),
+            lte: new Date(`${end}T23:59:59+08:00`),
+          },
+          entry: { spaceId, authorId: viewerId, deletedAt: null },
+          authorId: { not: viewerId },
+        },
+      }),
+      // P3-T2：上周 TA 抱我的次数（TA 给我的 CheckIn 的抱抱）
+      prisma.checkInHug.count({
+        where: {
+          createdAt: {
+            gte: new Date(`${start}T00:00:00+08:00`),
+            lte: new Date(`${end}T23:59:59+08:00`),
+          },
+          giverId: { not: viewerId },
+          checkIn: { spaceId, authorId: viewerId },
+        },
+      }),
+    ]);
 
   const days = new Set<string>();
   for (const row of checkIns) {
@@ -204,5 +246,12 @@ export async function collectWeeklySummary(
     .slice(0, 5)
     .map((mark) => ({ title: mark.title, day: mark.day }));
 
-  return { nickname, checkInDays: days.size, entryCount: entries, nearDaymarks };
+  return {
+    nickname,
+    checkInDays: days.size,
+    entryCount: entries,
+    nearDaymarks,
+    reactionsFromPartner,
+    hugsFromPartner,
+  };
 }

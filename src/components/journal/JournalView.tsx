@@ -16,6 +16,7 @@ import {
   formatDayShort,
   formatMonthHeading,
   type OnThisDayItem,
+  type OnThisDayListItem,
   type TimelineFilter,
   type TimelineItem,
   type TimelineStats,
@@ -33,6 +34,8 @@ type JournalViewProps = {
   initialQuery?: string;
   /** P1-1：历史同日日记（仅首屏传入） */
   onThisDay?: OnThisDayItem[];
+  /** P3-T3：历史同日完成的清单项（仅首屏传入） */
+  onThisDayLists?: OnThisDayListItem[];
 };
 
 const FILTERS: { id: TimelineFilter; label: string }[] = [
@@ -54,6 +57,7 @@ export function JournalView({
   currentMonth,
   initialQuery = "",
   onThisDay = [],
+  onThisDayLists = [],
 }: JournalViewProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<TimelineFilter>(initialFilter);
@@ -214,6 +218,35 @@ export function JournalView({
                       {formatDayShort(o.day)}
                     </span>
                   </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {onThisDayLists.length > 0 &&
+        items.length > 0 &&
+        filter === "all" &&
+        !query.trim() ? (
+          <section className="mb-8">
+            <h2 className="mb-3 font-display text-[20px] text-ink-secondary">
+              ☑ 那年今天完成的
+            </h2>
+            <ul className="divide-y divide-line rounded-[var(--radius-md)] border border-line bg-white/25 px-4">
+              {onThisDayLists.map((o) => (
+                <li
+                  key={o.id}
+                  className="flex items-baseline gap-3 py-3"
+                >
+                  <span className="shrink-0 text-[12px] font-medium tracking-[0.04em] text-brand">
+                    {o.yearsAgo} 年前
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
+                    ☑ {o.title}
+                    <span className="ml-2 text-[12px] text-ink-tertiary">
+                      {o.categoryLabel}
+                    </span>
+                  </span>
                 </li>
               ))}
             </ul>

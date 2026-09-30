@@ -9,6 +9,7 @@ import { Workbench, WorkbenchToolbar } from "@/components/shell/Workbench";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import type { LetterDTO } from "@/lib/letter";
+import { formatDayShort } from "@/lib/journal";
 
 type LettersViewProps = {
   today: string;
@@ -166,8 +167,12 @@ function LetterCard({
             {letter.title || "一封没有标题的信"}
           </p>
           <p className="mt-1 text-[12px] text-ink-tertiary">
-            {authorLabel} 写于 {letter.unlockDay.slice(0, 10)} 之前
-            {letter.state === "unlocking" ? " · 今天开启 ✨" : null}
+            {authorLabel} 写于 {formatDayShort(letter.unlockDay)} 之前
+            {letter.state === "unlocking"
+              ? " · 今天开启 ✨"
+              : letter.daysLeft != null
+                ? ` · 还有 ${letter.daysLeft} 天`
+                : null}
           </p>
         </div>
         <span

@@ -14,7 +14,7 @@ import {
   WorkbenchToolbar,
 } from "@/components/shell/Workbench";
 import { Button } from "@/components/ui/Button";
-import { formatTodayLabel, type CheckIn } from "@/lib/checkin";
+import { formatTodayLabel, type CheckIn, type StreakBadge } from "@/lib/checkin";
 import type { DayMarkHint } from "@/lib/daymark";
 import type { OnThisDayItem } from "@/lib/journal";
 import { daysSinceAnniversary } from "@/lib/space";
@@ -53,6 +53,12 @@ type TodayViewProps = {
   } | null;
   /** P2-N8：我发起的合写（等待对方） */
   myPendingInvite?: { entryId: string; day: string; title: string | null } | null;
+  /** P3-T10：记录徽章（null = 达不成，安静消失） */
+  streakBadge?: StreakBadge;
+  /** P3-T3：那年今天完成的清单项 */
+  onThisDayList?: { id: string; yearsAgo: number; title: string; categoryLabel: string } | null;
+  /** P3-T4：最近一封待解锁信（收信方 title 置 null） */
+  letterHint?: { unlockDay: string; title: string | null; daysLeft: number } | null;
 };
 
 export function TodayView({
@@ -69,6 +75,9 @@ export function TodayView({
   partnerTimeZone = null,
   collabInvite = null,
   myPendingInvite = null,
+  streakBadge = null,
+  onThisDayList = null,
+  letterHint = null,
 }: TodayViewProps) {
   const router = useRouter();
   const dateLabel = formatTodayLabel();
@@ -258,6 +267,23 @@ export function TodayView({
           </Link>
         ) : null}
 
+        {streakBadge ? (
+          <p className="mb-4 text-[12px] tracking-[0.02em] text-ink-tertiary">
+            {streakBadge.line}
+          </p>
+        ) : null}
+
+        {letterHint ? (
+          <Link
+            href="/us/letters"
+            className="mb-4 block text-[13px] text-ink-secondary hover:text-brand"
+          >
+            ✉ {letterHint.title ? `《${letterHint.title}》` : "有一封信"}
+            将于 {letterHint.unlockDay} 开启
+            {letterHint.daysLeft > 0 ? ` · 还有 ${letterHint.daysLeft} 天` : " · 今天开启 ✨"}
+          </Link>
+        ) : null}
+
         <div
           className={
             focus === "both"
@@ -358,6 +384,11 @@ export function TodayView({
             >
               {onThisDay.yearsAgo} 年前的今天写过：《{onThisDay.title || onThisDay.bodyPreview}》
             </Link>
+          ) : null}
+          {onThisDayList ? (
+            <p className="mt-2 text-[13px] text-ink-secondary">
+              ☑ {onThisDayList.yearsAgo} 年前今天完成了「{onThisDayList.title}」
+            </p>
           ) : null}
           <button
             type="button"

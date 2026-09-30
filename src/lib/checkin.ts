@@ -152,3 +152,72 @@ function countTogetherDays(w: WeeklyMoodWeek): number {
   // 轻量版不存逐日明细，以双方天数较小者近似共同天数
   return Math.min(w.me.days, w.you.days);
 }
+
+// —— P3-T10 连续共同记录徽章（两档，达不成安静消失，绝不断签提示） ——
+
+export type StreakBadgeInput = {
+  /** 近 n 周（含本周）的 CheckIn 日期行，authorIsMe 区分双方 */
+  days: Array<{ day: string; authorIsMe: boolean }>;
+  /** 本周周一 YYYY-MM-DD */
+  thisWeekStart: string;
+};
+
+export type StreakBadge =
+  | { kind: "week-days"; days: number; line: string }
+  | { kind: "weeks-streak"; weeks: number; line: string }
+  | null;
+
+const WEEK_BADGE_THRESHOLD = 5;
+const STREAK_BADGE_THRESHOLD = 4;
+
+/**
+ * 两档徽章：本周共同记录 ≥ 5 天（优先）；否则连续 ≥ 4 周都有共同记录。
+ * 共同 = 同一天双方都有；达不成返回 null（安静消失）。
+ */
+export function streakBadge(input: StreakBadgeInput): StreakBadge {
+  const byDay = new Map<string, { me: boolean; you: boolean }>();
+  for (const d of input.days) {
+    const b = byDay.get(d.day) ?? { me: false, you: false };
+    if (d.authorIsMe) b.me = true;
+    else b.you = true;
+    byDay.set(d.day, b);
+  }
+
+  const together = [...byDay.entries()]
+    .filter(([, b]) => b.me && b.you)
+    .map(([day]) => day)
+    .sort();
+
+  // 档一：本周共同天数
+  const thisWeekDays = together.filter((d) => d >= input.thisWeekStart).length;
+  if (thisWeekDays >= WEEK_BADGE_THRESHOLD) {
+    return {
+      kind: "week-days",
+      days: thisWeekDays,
+      line: `本周已共同记录 ${thisWeekDays} 天 🌿`,
+    };
+  }
+
+  // 档二：连续共同周数（含本周；共同 = 该周至少 1 天双方都有）
+  const weekStarts = recentWeekStarts(input.thisWeekStart, 6);
+  let streak = 0;
+  for (let i = weekStarts.length - 1; i >= 0; i--) {
+    const start = weekStarts[i]!;
+    const end =
+      i < weekStarts.length - 1
+        ? weekStarts[i + 1]!
+        : "9999-12-31"; // 本周取全部
+    const has = together.some((d) => d >= start && d < end);
+    if (has) streak += 1;
+    else break;
+  }
+  if (streak >= STREAK_BADGE_THRESHOLD) {
+    return {
+      kind: "weeks-streak",
+      weeks: streak,
+      line: `连续 ${streak} 周都在记录 🌿`,
+    };
+  }
+
+  return null;
+}

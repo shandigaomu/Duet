@@ -41,6 +41,8 @@ export type LetterDTO = {
   isMine: boolean;
   authorNickname: string;
   createdAt: string;
+  /** P3-T4：距解锁天数（sealed 状态 ≥ 1；unlocking = 0；opened 为 null） */
+  daysLeft: number | null;
 };
 
 /** 信的状态：解锁日之前 sealed；当天 unlocking；之后 opened */
@@ -48,6 +50,15 @@ export function letterState(unlockDay: string, today: string): LetterState {
   if (unlockDay > today) return "sealed";
   if (unlockDay === today) return "unlocking";
   return "opened";
+}
+
+/** P3-T4：距解锁还有几天（0 = 今天解锁；负数 = 已过） */
+export function daysUntilUnlock(unlockDay: string, today: string): number {
+  const parse = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1);
+  };
+  return Math.round((parse(unlockDay) - parse(today)) / 86_400_000);
 }
 
 /** 列表 DTO 组装：sealed 状态下收信方看不到正文 */
@@ -75,5 +86,6 @@ export function toLetterDTO(
     isMine,
     authorNickname: isMine ? "我" : "TA",
     createdAt: row.createdAt.toISOString(),
+    daysLeft: state === "sealed" ? daysUntilUnlock(row.unlockDay, opts.today) : state === "unlocking" ? 0 : null,
   };
 }

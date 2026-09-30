@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Dice5,
   Heart,
   ImageIcon,
   ListTodo,
@@ -15,6 +16,14 @@ type UsOverviewProps = {
   photoCount: number;
   noteCount: number;
   letterCount: number;
+};
+
+const counts = {
+  list: 0,
+  album: 0,
+  notes: 0,
+  letters: 0,
+  recall: 0,
 };
 
 const LINKS = [
@@ -46,6 +55,13 @@ const LINKS = [
     icon: Mail,
     key: "letters" as const,
   },
+  {
+    href: "/us/recall",
+    label: "一起看",
+    hint: () => "每天抽一篇旧日记",
+    icon: Dice5,
+    key: "recall" as const,
+  },
 ];
 
 export function UsOverview({
@@ -54,7 +70,8 @@ export function UsOverview({
   noteCount,
   letterCount,
 }: UsOverviewProps) {
-  const counts = {
+  const liveCounts = {
+    ...counts,
     list: openListCount,
     album: photoCount,
     notes: noteCount,
@@ -67,7 +84,7 @@ export function UsOverview({
       title="我们"
       description="共同清单、相册、悄悄话与时光信。日子在「记录」里。"
     >
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {LINKS.map((item) => {
           const Icon = item.icon;
           return (
@@ -80,7 +97,7 @@ export function UsOverview({
               <div>
                 <p className="text-[17px] font-semibold text-ink">{item.label}</p>
                 <p className="mt-1 text-[13px] text-ink-secondary">
-                  {item.hint(counts[item.key])}
+                  {item.hint(liveCounts[item.key])}
                 </p>
               </div>
             </Link>

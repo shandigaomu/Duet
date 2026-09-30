@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
+import { categoryLabel as listCategoryLabel } from "@/lib/list";
 import {
   BODY_MAX,
   IMAGE_MAX,
@@ -12,6 +13,7 @@ import {
   TITLE_MAX,
   previewBody,
   pickOnThisDay,
+  pickOnThisDayLists,
   shanghaiMonth,
   shanghaiMonthDay,
   shanghaiWeekRange,
@@ -19,6 +21,7 @@ import {
   type EntryDTO,
   type EntryListItem,
   type OnThisDayItem,
+  type OnThisDayListItem,
   type TimelineFilter,
   type TimelineItem,
   type TimelineStats,
@@ -176,6 +179,8 @@ export async function loadTimeline(opts?: {
   q: string;
   /** P1-1：历史同日日记（仅首屏返回，分页页为空数组） */
   onThisDay: OnThisDayItem[];
+  /** P3-T3：历史同日完成的清单项（仅首屏返回） */
+  onThisDayLists: OnThisDayListItem[];
 }> {
   const ctx = await requirePaired();
   const filter = opts?.filter ?? "all";
@@ -236,7 +241,7 @@ export async function loadTimeline(opts?: {
     ...(cursor ? { day: { lt: cursor } } : {}),
   };
 
-  const [entryRows, checkInRows, total, mine, yours, monthCount, onThisDayRows] =
+  const [entryRows, checkInRows, total, mine, yours, monthCount, onThisDayRows, onThisDayListRows] =
     await Promise.all([
       prisma.entry.findMany({
         where: entryWhere,
@@ -292,6 +297,29 @@ export async function loadTimeline(opts?: {
             select: { id: true, day: true, title: true, body: true },
             orderBy: { day: "desc" },
             take: 30,
+          }),
+      // P3-T3：历史同月日完成的清单项（仅首屏查询）
+      cursor
+        ? Promise.resolve([])
+        : prisma.listItem.findMany({
+            where: {
+              spaceId,
+              status: "done",
+              completedAt: {
+                not: null,
+                // 历年同月日：取近 10 年窗口，交由内存按月日过滤
+                gte: new Date(`${Number(currentYear()) - 10}-01-01T00:00:00+08:00`),
+                lt: new Date(`${currentYear()}-01-01T00:00:00+08:00`),
+              },
+            },
+            select: {
+              id: true,
+              completedAt: true,
+              title: true,
+              category: true,
+            },
+            orderBy: { completedAt: "desc" },
+            take: 60,
           }),
     ]);
 
@@ -386,6 +414,16 @@ export async function loadTimeline(opts?: {
     currentMonth,
     q,
     onThisDay: pickOnThisDay(onThisDayRows, shanghaiDay(), 3),
+    onThisDayLists: pickOnThisDayLists(
+      onThisDayListRows.map((r) => ({
+        id: r.id,
+        completedDay: (r.completedAt as Date).toISOString().slice(0, 10),
+        title: r.title,
+        categoryLabel: listCategoryLabel(r.category as "go" | "eat" | "do"),
+      })),
+      shanghaiDay(),
+      2,
+    ),
   };
 }
 
@@ -406,6 +444,39 @@ export async function loadTodayOnThisDay(): Promise<OnThisDayItem | null> {
     take: 30,
   });
   return pickOnThisDay(rows, today, 1)[0] ?? null;
+}
+
+/** P3-T3：今日页「那年今天完成了」清单提示（最多 1 条，最近年份） */
+export async function loadTodayOnThisDayList(): Promise<OnThisDayListItem | null> {
+  const ctx = await requirePaired();
+  const today = shanghaiDay();
+  const thisYear = today.slice(0, 4);
+  const rows = await prisma.listItem.findMany({
+    where: {
+      spaceId: ctx.membership.spaceId,
+      status: "done",
+      completedAt: {
+        not: null,
+        gte: new Date(`${Number(thisYear) - 10}-01-01T00:00:00+08:00`),
+        lt: new Date(`${thisYear}-01-01T00:00:00+08:00`),
+      },
+    },
+    select: { id: true, completedAt: true, title: true, category: true },
+    orderBy: { completedAt: "desc" },
+    take: 60,
+  });
+  return (
+    pickOnThisDayLists(
+      rows.map((r) => ({
+        id: r.id,
+        completedDay: (r.completedAt as Date).toISOString().slice(0, 10),
+        title: r.title,
+        categoryLabel: listCategoryLabel(r.category as "go" | "eat" | "do"),
+      })),
+      today,
+      1,
+    )[0] ?? null
+  );
 }
 
 export async function getEntryById(id: string): Promise<EntryDTO | null> {

@@ -5,6 +5,13 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
 import { shanghaiDay } from "@/lib/space";
+import { sendEventEmail } from "@/server/mail";
+import {
+  pushCollabInvited,
+  pushCollabPublished,
+  pushCollabSectionDone,
+  pushToPartner,
+} from "@/server/push";
 
 /** P2-N8 合写日记：各写各段、互不可改对方文字；双方确认后 published */
 
@@ -62,6 +69,20 @@ export async function inviteCollabAction(input: {
 
   revalidatePath("/today");
   revalidatePath("/journal");
+
+  // P3-T1：邀请发出 → 通知对方（推送 + 可选邮件）
+  pushToPartner(
+    partner.userId,
+    ctx.user.id,
+    pushCollabInvited(ctx.membership.nickname, input.day, input.title),
+  );
+  sendEventEmail(
+    partner.userId,
+    ctx.user.id,
+    ctx.membership.nickname,
+    "collab-invite",
+  );
+
   return { ok: true, entryId: row.id };
 }
 
@@ -117,6 +138,25 @@ export async function submitCollabSectionAction(input: {
 
   revalidatePath("/today");
   revalidatePath(`/journal/${entry.id}`);
+
+  // P3-T1：对方交稿 → 通知邀请人
+  const inviter = ctx.membership.space.members.find(
+    (m) => m.userId === entry.authorId,
+  );
+  if (inviter) {
+    pushToPartner(
+      inviter.userId,
+      ctx.user.id,
+      pushCollabSectionDone(ctx.membership.nickname),
+    );
+    sendEventEmail(
+      inviter.userId,
+      ctx.user.id,
+      ctx.membership.nickname,
+      "collab-done",
+    );
+  }
+
   return { ok: true };
 }
 
@@ -165,6 +205,13 @@ export async function confirmCollabAction(input: {
       data: { collabStatus: "published" },
     });
     revalidatePath("/journal");
+
+    // P3-T1：成稿 → 通知对方（最后确认者提醒另一人）
+    pushToPartner(
+      partner?.userId,
+      ctx.user.id,
+      pushCollabPublished(entry.title),
+    );
   }
 
   revalidatePath("/today");

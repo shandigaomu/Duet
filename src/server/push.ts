@@ -12,7 +12,8 @@ export type PushEventKind =
   | "entry" // 新日记
   | "list" // 清单完成
   | "hug" // 被抱抱
-  | "letter"; // 时光信解锁
+  | "letter" // 时光信解锁
+  | "collab"; // P3-T1 合写（邀请/交稿/成稿）
 
 export type PushPayload = {
   title: string;
@@ -186,5 +187,40 @@ export function pushLetterUnlocked(title: string | null) {
     body: title ? `「${title}」今天可以打开了` : "有一封信今天可以打开了",
     url: "/us/letters",
     tag: "letter" as const,
+  };
+}
+
+// —— P3-T1 合写通知（邀请/交稿/成稿三时刻） ——
+
+export function pushCollabInvited(
+  nickname: string,
+  day: string,
+  title: string | null,
+) {
+  return {
+    title: "合写邀请",
+    body: title
+      ? `${nickname} 想邀你合写 ${day} 的《${title}》`
+      : `${nickname} 想邀你合写 ${day} 的日记`,
+    url: "/today",
+    tag: "collab" as const,
+  };
+}
+
+export function pushCollabSectionDone(nickname: string) {
+  return {
+    title: "合写进展",
+    body: `${nickname} 写好了 TA 那一段`,
+    url: "/today",
+    tag: "collab" as const,
+  };
+}
+
+export function pushCollabPublished(title: string | null) {
+  return {
+    title: "合写完成",
+    body: title ? `《${title}》合写完成了` : "你们的合写日记完成了",
+    url: "/journal",
+    tag: "collab" as const,
   };
 }

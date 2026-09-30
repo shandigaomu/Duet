@@ -91,6 +91,61 @@ export type OnThisDayItem = {
   bodyPreview: string;
 };
 
+/** P3-T3 清单那年完成：历史同日完成的清单项 */
+export type OnThisDayListItem = {
+  id: string;
+  completedAt: string;
+  yearsAgo: number;
+  title: string;
+  categoryLabel: string;
+};
+
+/**
+ * P3-T3：从历年同月日完成的清单行归并为最多 limit 条（每年取一条，最近年份在前）。
+ * completedDay 形如 YYYY-MM-DD，仅月日参与匹配；今年及未来的行由调用方过滤。
+ */
+export function pickOnThisDayLists(
+  rows: Array<{
+    id: string;
+    completedDay: string;
+    title: string;
+    categoryLabel: string;
+  }>,
+  today: string,
+  limit = 2,
+): OnThisDayListItem[] {
+  const md = today.slice(5);
+  const thisYear = Number(today.slice(0, 4));
+  const byYear = new Map<
+    number,
+    { id: string; completedDay: string; title: string; categoryLabel: string }
+  >();
+  for (const r of rows) {
+    const y = Number(r.completedDay.slice(0, 4));
+    if (!y || y >= thisYear) continue;
+    if (r.completedDay.slice(5) !== md) continue;
+    const prev = byYear.get(y);
+    // 同年多条取完成时间更晚的（id 大者兜底稳定）
+    if (
+      !prev ||
+      r.completedDay > prev.completedDay ||
+      (r.completedDay === prev.completedDay && r.id > prev.id)
+    ) {
+      byYear.set(y, r);
+    }
+  }
+  return [...byYear.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, limit)
+    .map(([year, r]) => ({
+      id: r.id,
+      completedAt: r.completedDay,
+      yearsAgo: thisYear - year,
+      title: r.title,
+      categoryLabel: r.categoryLabel,
+    }));
+}
+
 /** 3.18 */
 export function formatDayShort(day: string) {
   const [, m, d] = day.split("-");
@@ -154,6 +209,11 @@ export function shanghaiMonthDay(date = new Date()): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+/** 本周周一 YYYY-MM-DD（Asia/Shanghai）——P3-T10 徽章用 */
+export function shanghaiWeekStart(date = new Date()): string {
+  return shanghaiWeekRange(date).start;
 }
 
 /**

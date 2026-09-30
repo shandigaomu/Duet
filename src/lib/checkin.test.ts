@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateWeeklyMood,
   recentWeekStarts,
+  streakBadge,
   weeklyMoodSummary,
   type WeeklyMoodRow,
 } from "@/lib/checkin";
@@ -93,5 +94,68 @@ describe("weeklyMoodSummary", () => {
     const s = weeklyMoodSummary(weeks);
     expect(s.togetherDaysThisWeek).toBe(0);
     expect(s.togetherWeeksStreak).toBe(0);
+  });
+});
+
+// —— P3-T10 连续共同记录徽章 ——
+
+function weekDays(start: string, count: number, side: "me" | "you" | "both") {
+  const [y, m, d] = start.split("-").map(Number);
+  const out: Array<{ day: string; authorIsMe: boolean }> = [];
+  for (let i = 0; i < count; i++) {
+    const dt = new Date(Date.UTC(y!, m! - 1, d! + i));
+    const day = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+    if (side === "me" || side === "both") out.push({ day, authorIsMe: true });
+    if (side === "you" || side === "both") out.push({ day, authorIsMe: false });
+  }
+  return out;
+}
+
+const THIS_MONDAY = recentWeekStarts("2026-09-28", 1)[0]!; // 2026-09-28 是周一
+
+describe("streakBadge", () => {
+  it("本周共同 ≥ 5 天 → 档一徽章", () => {
+    const days = [...weekDays(THIS_MONDAY, 5, "both")];
+    const b = streakBadge({ days, thisWeekStart: THIS_MONDAY });
+    expect(b?.kind).toBe("week-days");
+    expect(b?.kind === "week-days" && b.line).toContain("5 天");
+  });
+
+  it("本周只有我写 → 无徽章（对方天数不算共同）", () => {
+    const b = streakBadge({
+      days: weekDays(THIS_MONDAY, 7, "me"),
+      thisWeekStart: THIS_MONDAY,
+    });
+    expect(b).toBeNull();
+  });
+
+  it("连续 4 周共同 → 档二徽章", () => {
+    const starts = recentWeekStarts(THIS_MONDAY, 4);
+    const days = starts.flatMap((s) => weekDays(s, 2, "both"));
+    const b = streakBadge({ days, thisWeekStart: THIS_MONDAY });
+    expect(b?.kind).toBe("weeks-streak");
+    expect(b?.kind === "weeks-streak" && b.weeks).toBe(4);
+  });
+
+  it("中间断一周 → 连续被打断，无徽章", () => {
+    const starts = recentWeekStarts(THIS_MONDAY, 4);
+    const days = [
+      ...weekDays(starts[0]!, 2, "both"),
+      ...weekDays(starts[1]!, 2, "both"),
+      // starts[2] 断
+      ...weekDays(starts[3]!, 2, "both"),
+    ];
+    expect(streakBadge({ days, thisWeekStart: THIS_MONDAY })).toBeNull();
+  });
+
+  it("本周共 3 天不足档一但连续 5 周 → 落到档二", () => {
+    const starts = recentWeekStarts(THIS_MONDAY, 5);
+    const days = starts.flatMap((s) => weekDays(s, 3, "both"));
+    const b = streakBadge({ days, thisWeekStart: THIS_MONDAY });
+    expect(b?.kind).toBe("weeks-streak");
+  });
+
+  it("空数据 → null（安静消失）", () => {
+    expect(streakBadge({ days: [], thisWeekStart: THIS_MONDAY })).toBeNull();
   });
 });
