@@ -6,6 +6,10 @@ export default async function MainLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requirePaired();
-  return <MainShell>{children}</MainShell>;
+  const { membership } = await requirePaired();
+  return (
+    <MainShell spaceName={membership.space.name ?? null}>
+      {children}
+    </MainShell>
+  );
 }

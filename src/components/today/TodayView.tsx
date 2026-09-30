@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { PersonColumn } from "@/components/today/PersonColumn";
 import { UpdateTodaySheet } from "@/components/today/UpdateTodaySheet";
 import {
@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { formatTodayLabel, type CheckIn } from "@/lib/checkin";
 import type { DayMarkHint } from "@/lib/daymark";
+import { daysSinceAnniversary } from "@/lib/space";
 import { saveTodayCheckInAction } from "@/server/checkin-actions";
 
 const POLL_KEY = "duet.today.poll";
@@ -26,6 +27,7 @@ type TodayViewProps = {
   partnerNickname?: string;
   todayEntryCount?: number;
   dayHint?: DayMarkHint | null;
+  anniversaryDay?: string | null;
 };
 
 export function TodayView({
@@ -35,6 +37,7 @@ export function TodayView({
   partnerNickname = "你",
   todayEntryCount = 0,
   dayHint = null,
+  anniversaryDay = null,
 }: TodayViewProps) {
   const router = useRouter();
   const dateLabel = formatTodayLabel();
@@ -49,12 +52,15 @@ export function TodayView({
   const [pollEnabled, setPollEnabled] = useState(true);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(POLL_KEY);
-      if (raw === "0") setPollEnabled(false);
-    } catch {
-      /* ignore */
-    }
+    // 延迟到渲染后读取，避免同步 setState 触发级联渲染（react-hooks/set-state-in-effect）
+    const t = window.setTimeout(() => {
+      try {
+        if (localStorage.getItem(POLL_KEY) === "0") setPollEnabled(false);
+      } catch {
+        /* ignore */
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -111,13 +117,21 @@ export function TodayView({
   }
 
   const syncedCount = Number(Boolean(mine)) + Number(Boolean(yours));
+  const anniversaryDays =
+    anniversaryDay && !anniversaryDay.startsWith("0000")
+      ? daysSinceAnniversary(anniversaryDay)
+      : null;
 
   return (
     <>
       <Workbench
         eyebrow="Today · Sync Desk"
         title="今日展台"
-        description={`${dateLabel} · 先看对方，再写下自己的今天`}
+        description={
+          anniversaryDays != null && anniversaryDays > 0
+            ? `${dateLabel} · 在一起第 ${anniversaryDays} 天`
+            : dateLabel
+        }
         action={
           <div className="flex items-center gap-2">
             <button
@@ -153,18 +167,7 @@ export function TodayView({
           { label: "关联日记", value: todayEntryCount },
         ]}
         toolbar={
-          <WorkbenchToolbar
-            trailing={
-              <label className="flex h-9 items-center gap-2 rounded-[10px] bg-white/45 px-3 text-[13px] text-ink-tertiary">
-                <Search className="size-3.5" strokeWidth={1.75} />
-                <input
-                  className="w-28 bg-transparent text-ink outline-none placeholder:text-ink-tertiary md:w-40"
-                  placeholder="搜索今日…"
-                  disabled
-                />
-              </label>
-            }
-          >
+          <WorkbenchToolbar>
             <WorkbenchTab
               active={focus === "both"}
               onClick={() => setFocus("both")}

@@ -1,11 +1,14 @@
+import { compressImage } from "@/lib/image-compress";
 import type { UploadKind } from "@/lib/storage";
 
 export async function uploadImageFile(
   file: File,
   kind: UploadKind,
 ): Promise<{ url: string }> {
+  // P0-0：上传前压缩（原图过大时显著省流量）；失败自动回退原图
+  const prepared = kind === "avatar" ? file : await compressImage(file);
   const body = new FormData();
-  body.set("file", file);
+  body.set("file", prepared);
   body.set("kind", kind);
 
   const res = await fetch("/api/upload", {

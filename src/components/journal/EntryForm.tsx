@@ -59,19 +59,23 @@ export function EntryForm({
   useEffect(() => {
     if (mode !== "create" || !draftOwner || hydrated.current) return;
     hydrated.current = true;
-    const draft = loadEntryDraft(draftOwner.userId, draftOwner.spaceId);
-    if (!draft) {
+    // 延迟到渲染后恢复，避免同步 setState 触发级联渲染（react-hooks/set-state-in-effect）
+    const t = window.setTimeout(() => {
+      const draft = loadEntryDraft(draftOwner.userId, draftOwner.spaceId);
+      if (draft) {
+        if (draft.body.trim() || draft.title.trim() || draft.imageUrls.length) {
+          setDay(draft.day);
+          setTitle(draft.title);
+          setBody(draft.body);
+          setImages(
+            draft.imageUrls.map((url) => ({ preview: url, file: null })),
+          );
+          setDraftHint(true);
+        }
+      }
       setDraftRestored(true);
-      return;
-    }
-    if (draft.body.trim() || draft.title.trim() || draft.imageUrls.length) {
-      setDay(draft.day);
-      setTitle(draft.title);
-      setBody(draft.body);
-      setImages(draft.imageUrls.map((url) => ({ preview: url, file: null })));
-      setDraftHint(true);
-    }
-    setDraftRestored(true);
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [mode, draftOwner]);
 
   useEffect(() => {

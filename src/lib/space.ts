@@ -20,3 +20,16 @@ export function shanghaiDay(date = new Date()) {
     day: "2-digit",
   }).format(date);
 }
+
+/** P0-2：在一起第 N 天（含当天起算）；未来日期返回负数偏移 */
+export function daysSinceAnniversary(
+  anniversaryDay: string,
+  today = shanghaiDay(),
+): number | null {
+  const pa = anniversaryDay.split("-").map(Number);
+  const pt = today.split("-").map(Number);
+  if (!pa[0] || !pt[0]) return null;
+  const aMs = Date.UTC(pa[0], pa[1]! - 1, pa[2]!);
+  const tMs = Date.UTC(pt[0], pt[1]! - 1, pt[2]!);
+  return Math.round((tMs - aMs) / 86_400_000) + 1;
+}

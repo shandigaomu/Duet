@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Instrument_Serif, Manrope } from "next/font/google";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { ErrorReporter } from "@/components/error/ErrorReporter";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full font-sans text-ink">
         <ThemeProvider>{children}</ThemeProvider>
+        <ErrorReporter />
       </body>
     </html>
   );

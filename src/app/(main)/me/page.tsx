@@ -1,12 +1,16 @@
 import { Workbench } from "@/components/shell/Workbench";
 import { MeSettings } from "@/components/me/MeSettings";
 import { requirePaired } from "@/lib/guards";
+import { loadRecentErrors } from "@/server/error-actions";
 
 export const metadata = { title: "我的" };
 
 export default async function MePage() {
   const { user, membership } = await requirePaired();
-  const members = membership.space.members;
+  const [members, recentErrors] = await Promise.all([
+    Promise.resolve(membership.space.members),
+    loadRecentErrors(),
+  ]);
   const partner = members.find((m) => m.userId !== user.id);
 
   return (
@@ -28,6 +32,10 @@ export default async function MePage() {
         inviteCode={membership.space.inviteCode}
         memberCount={members.length}
         partnerNickname={partner?.nickname ?? null}
+        spaceName={membership.space.name ?? null}
+        anniversaryDay={membership.space.anniversaryDay ?? null}
+        recentErrors={recentErrors.errors}
+        errorTotal={recentErrors.total}
       />
     </Workbench>
   );

@@ -2,11 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { DevPanel } from "@/components/me/DevPanel";
 import { EditProfileSheet } from "@/components/me/EditProfileSheet";
 import { ThemePicker } from "@/components/theme/ThemeProvider";
+import type { ErrorLogDTO } from "@/server/error-actions";
 import { Button } from "@/components/ui/Button";
 import { authClient } from "@/lib/auth-client";
-import { unpairSpaceAction } from "@/server/space-actions";
+import {
+  unpairSpaceAction,
+  updateSpaceInfoAction,
+} from "@/server/space-actions";
 
 type MeSettingsProps = {
   nickname: string;
@@ -15,6 +20,10 @@ type MeSettingsProps = {
   inviteCode: string;
   memberCount: number;
   partnerNickname: string | null;
+  spaceName: string | null;
+  anniversaryDay: string | null;
+  recentErrors: ErrorLogDTO[];
+  errorTotal: number;
 };
 
 export function MeSettings({
@@ -24,6 +33,10 @@ export function MeSettings({
   inviteCode,
   memberCount,
   partnerNickname,
+  spaceName: initialSpaceName,
+  anniversaryDay: initialAnniversary,
+  recentErrors,
+  errorTotal,
 }: MeSettingsProps) {
   const router = useRouter();
   const [nickname, setNickname] = useState(initialNickname);
@@ -33,6 +46,11 @@ export function MeSettings({
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [spaceName, setSpaceName] = useState(initialSpaceName ?? "");
+  const [anniversaryDay, setAnniversaryDay] = useState(
+    initialAnniversary ?? "",
+  );
+  const [spaceSaved, setSpaceSaved] = useState(false);
 
   async function logout() {
     await authClient.signOut();
@@ -44,6 +62,21 @@ export function MeSettings({
     await navigator.clipboard.writeText(inviteCode);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  async function saveSpaceInfo() {
+    setError(null);
+    const res = await updateSpaceInfoAction({
+      name: spaceName.trim() || null,
+      anniversaryDay: anniversaryDay || null,
+    });
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    setSpaceSaved(true);
+    window.setTimeout(() => setSpaceSaved(false), 1600);
+    router.refresh();
   }
 
   function unpair() {
@@ -113,6 +146,41 @@ export function MeSettings({
               <dd className="text-ink">{memberCount}/2</dd>
             </div>
           </dl>
+          <div className="mt-4 border-t border-line pt-4">
+            <label className="block">
+              <span className="text-[12px] text-ink-secondary">空间名（可选）</span>
+              <input
+                value={spaceName}
+                onChange={(e) => setSpaceName(e.target.value.slice(0, 20))}
+                placeholder="给这个小家取个名字"
+                maxLength={20}
+                className="mt-1.5 h-10 w-full rounded-[10px] border border-line bg-white/45 px-3 text-[14px] text-ink outline-none placeholder:text-ink-tertiary focus:border-brand"
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className="text-[12px] text-ink-secondary">
+                在一起那天（可选）
+              </span>
+              <input
+                type="date"
+                value={anniversaryDay}
+                onChange={(e) => setAnniversaryDay(e.target.value)}
+                className="mt-1.5 h-10 w-full max-w-[200px] rounded-[10px] border border-line bg-white/45 px-3 text-[14px] text-ink outline-none focus:border-brand"
+              />
+            </label>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={saveSpaceInfo}
+                className="rounded-[10px] bg-brand px-4 py-2 text-[13px] font-medium text-[#F5F6F4]"
+              >
+                保存
+              </button>
+              {spaceSaved ? (
+                <span className="text-[12px] text-brand">已保存</span>
+              ) : null}
+            </div>
+          </div>
         </section>
 
         <section className="glass-panel p-5">
@@ -149,6 +217,13 @@ export function MeSettings({
               </button>
             </li>
           </ul>
+        </section>
+
+        <section className="glass-panel p-5 md:col-span-2">
+          <h2 className="text-[12px] font-medium tracking-[0.04em] text-ink-tertiary">
+            开发者
+          </h2>
+          <DevPanel errors={recentErrors} total={errorTotal} />
         </section>
 
         <section className="glass-panel p-5">

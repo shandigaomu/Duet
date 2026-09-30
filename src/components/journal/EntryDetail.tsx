@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowLeft, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ReactionBar } from "@/components/journal/ReactionBar";
 import { formatDayShort, type EntryDTO } from "@/lib/journal";
 import {
   deleteEntryAction,
@@ -24,6 +25,28 @@ export function EntryDetail({ entry }: EntryDetailProps) {
   const [slide, setSlide] = useState(0);
   const isMine = entry.authorSide === "me";
   const markedRef = useRef(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  function onTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    touchStart.current = t ? { x: t.clientX, y: t.clientY } : null;
+  }
+
+  function onTouchEnd(e: React.TouchEvent) {
+    const start = touchStart.current;
+    touchStart.current = null;
+    const t = e.changedTouches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // 横向滑动 ≥ 48px 且明显大于纵向位移才算翻页，避免干扰纵向滚动
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0) {
+      setSlide((s) => Math.min(entry.images.length - 1, s + 1));
+    } else {
+      setSlide((s) => Math.max(0, s - 1));
+    }
+  }
 
   useEffect(() => {
     if (isMine || markedRef.current) return;
@@ -68,6 +91,11 @@ export function EntryDetail({ entry }: EntryDetailProps) {
           ) : null}
           {isMine && entry.partnerReadAt ? (
             <span className="ml-1.5 text-[11px] text-ink-tertiary">已读</span>
+          ) : null}
+          {entry.partnerReaction ? (
+            <span className="ml-1.5 text-[11px] text-ink-tertiary">
+              {entry.partnerReaction.emoji} 已回应
+            </span>
           ) : null}
         </p>
         {isMine ? (
@@ -148,11 +176,16 @@ export function EntryDetail({ entry }: EntryDetailProps) {
 
         {entry.images.length > 0 ? (
           <div className="mt-8">
-            <div className="overflow-hidden rounded-[var(--radius-md)] bg-white/30">
+            <div
+              className="touch-pan-y select-none overflow-hidden rounded-[var(--radius-md)] bg-white/30"
+              onTouchStart={onTouchStart}
+              onTouchEnd={onTouchEnd}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={entry.images[slide]?.url}
                 alt=""
+                draggable={false}
                 className="max-h-[70vh] w-full object-contain"
               />
             </div>
@@ -183,6 +216,8 @@ export function EntryDetail({ entry }: EntryDetailProps) {
             ) : null}
           </div>
         ) : null}
+
+        <ReactionBar entry={entry} />
       </main>
     </>
   );

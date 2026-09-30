@@ -18,6 +18,11 @@ export type EntryImageDTO = {
 
 export type EntryVisibility = "shared" | "private";
 
+export type EntryReactionDTO = {
+  emoji: string;
+  body: string | null;
+};
+
 export type EntryDTO = {
   id: string;
   day: string;
@@ -30,9 +35,17 @@ export type EntryDTO = {
   images: EntryImageDTO[];
   /** 对方是否已读（仅作者侧有意义） */
   partnerReadAt: string | null;
+  /** 我的回应（P0-1，仅自己看自己回应） */
+  myReaction: EntryReactionDTO | null;
+  /** 对方的回应 */
+  partnerReaction: EntryReactionDTO | null;
   createdAt: string;
   updatedAt: string;
 };
+
+/** P0-1 预设表情（有序，不开放自定义） */
+export const REACTION_EMOJIS = ["❤️", "🤗", "😂", "😮", "😢"] as const;
+export const REACTION_BODY_MAX = 60;
 
 export type EntryListItem = {
   kind: "entry";
@@ -45,6 +58,8 @@ export type EntryListItem = {
   authorNickname: string;
   imageUrls: string[];
   partnerReadAt: string | null;
+  /** 我是否已回应（时间线小标，仅自己的日记有意义） */
+  myReactionAt: string | null;
   createdAt: string;
 };
 

@@ -72,6 +72,8 @@ export async function loadDaysPage(opts?: {
   upcoming: DayMarkDTO[];
   past: DayMarkDTO[];
   partnerNickname: string;
+  /** P0-2：系统合成的只读「在一起」周年标记（未设置纪念日时为 null） */
+  anniversaryMark: DayMarkDTO | null;
 }> {
   const ctx = await requirePaired();
   const today = shanghaiDay();
@@ -93,7 +95,27 @@ export async function loadDaysPage(opts?: {
     orderBy: [{ day: "asc" }, { createdAt: "asc" }],
   });
 
-  const dtos = all.map((r) => toDTO(r, ctx, today));
+  let dtos: DayMarkDTO[] = all.map((r) => toDTO(r, ctx, today));
+
+  // P0-2：纪念日 → 合成只读系统标记（不落库，不可改删）
+  const anniversary = ctx.membership.space.anniversaryDay;
+  const anniversaryMark: DayMarkDTO | null = anniversary
+    ? {
+        id: `system-anniversary`,
+        day: anniversary,
+        title: "在一起",
+        note: null,
+        yearly: true,
+        authorId: "system",
+        authorSide: "me",
+        authorNickname: "Duet",
+        nextDay: nextOccurrence(anniversary, true, today),
+        createdAt: "",
+        updatedAt: "",
+      }
+    : null;
+  if (anniversaryMark) dtos = [anniversaryMark, ...dtos];
+
   const { upcoming, past } = splitUpcomingPast(dtos, today);
 
   // 当月色点：非周年看原 day；周年在当月出现则标当月对应日
@@ -126,6 +148,7 @@ export async function loadDaysPage(opts?: {
     upcoming,
     past,
     partnerNickname: partnerOf(ctx)?.nickname ?? "你",
+    anniversaryMark,
   };
 }
 

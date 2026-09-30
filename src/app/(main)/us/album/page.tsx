@@ -20,6 +20,7 @@ export default async function AlbumPage({ searchParams }: Props) {
     <AlbumView
       key={source}
       photos={data.photos}
+      nextCursor={data.nextCursor}
       partnerNickname={data.partnerNickname}
       initialSource={source}
     />

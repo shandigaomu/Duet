@@ -5,7 +5,12 @@ import { usePathname } from "next/navigation";
 import { MAIN_NAV } from "@/lib/nav";
 import { cn } from "@/lib/cn";
 
-export function SideNav() {
+type SideNavProps = {
+  /** P0-2：空间名（未设置显示 Duet） */
+  spaceName?: string | null;
+};
+
+export function SideNav({ spaceName }: SideNavProps) {
   const pathname = usePathname();
 
   return (
@@ -16,7 +21,9 @@ export function SideNav() {
       >
         Duet
       </Link>
-      <p className="mt-2 text-[12px] text-ink-tertiary">私人空间 · 两人</p>
+      <p className="mt-2 truncate text-[12px] text-ink-tertiary">
+        {spaceName ? `${spaceName} · 两人` : "私人空间 · 两人"}
+      </p>
 
       <p className="mt-8 text-[11px] font-medium tracking-[0.12em] text-ink-tertiary uppercase">
         Spaces

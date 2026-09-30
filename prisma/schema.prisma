@@ -25,6 +25,8 @@ model User {
   entryReads    EntryRead[]
   listItems     ListItem[]
   notes         Note[]
+  errorLogs     ErrorLog[]
+  entryReactions EntryReaction[]
 
   @@map("user")
 }
@@ -78,6 +80,10 @@ model Verification {
 model Space {
   id        String        @id @default(cuid())
   inviteCode String       @unique @db.VarChar(12)
+  /// 空间名（可选，P0-2）
+  name      String?       @db.VarChar(20)
+  /// 在一起那天（可选，YYYY-MM-DD，P0-2）
+  anniversaryDay String?  @db.Char(10)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   members   SpaceMember[]
@@ -142,10 +148,27 @@ model Entry {
   author     User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
   images     EntryImage[]
   reads      EntryRead[]
+  reactions  EntryReaction[]
 
   @@index([spaceId, day])
   @@index([spaceId, createdAt])
   @@map("entry")
+}
+
+/// 日记回应：一条日记限一条/人，预设表情 + 可选一句话（P0-1）
+model EntryReaction {
+  id        String   @id @default(cuid())
+  entryId   String
+  authorId  String
+  emoji     String   @db.VarChar(8)
+  body      String?  @db.VarChar(60)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, authorId])
+  @@map("entry_reaction")
 }
 
 model EntryImage {
@@ -230,4 +253,23 @@ model Note {
   @@index([spaceId, createdAt])
   @@index([parentId])
   @@map("note")
+}
+
+/// 客户端/服务端错误上报（P0-3，30 天自动清理）
+model ErrorLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// 页面路由，如 /journal
+  route     String   @db.VarChar(120)
+  /// client-error | unhandledrejection
+  kind      String   @db.VarChar(24)
+  message   String   @db.VarChar(300)
+  stack     String?  @db.VarChar(2000)
+  ua        String?  @db.VarChar(200)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@map("error_log")
 }

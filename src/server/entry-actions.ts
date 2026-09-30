@@ -7,6 +7,8 @@ import { requirePaired } from "@/lib/guards";
 import {
   BODY_MAX,
   IMAGE_MAX,
+  REACTION_BODY_MAX,
+  REACTION_EMOJIS,
   TITLE_MAX,
   previewBody,
   shanghaiMonth,
@@ -53,12 +55,17 @@ function toEntryDTO(
     updatedAt: Date;
     images: { id: string; url: string; sortOrder: number }[];
     reads?: { readerId: string; readAt: Date }[];
+    reactions?: { authorId: string; emoji: string; body: string | null }[];
   },
   ctx: MembershipCtx,
 ): EntryDTO {
   const partner = partnerOf(ctx);
   const partnerRead = partner
     ? row.reads?.find((r) => r.readerId === partner.userId)
+    : undefined;
+  const mineReaction = row.reactions?.find((r) => r.authorId === ctx.user.id);
+  const partnerReaction = partner
+    ? row.reactions?.find((r) => r.authorId === partner.userId)
     : undefined;
   return {
     id: row.id,
@@ -78,6 +85,12 @@ function toEntryDTO(
         sortOrder: img.sortOrder,
       })),
     partnerReadAt: partnerRead?.readAt.toISOString() ?? null,
+    myReaction: mineReaction
+      ? { emoji: mineReaction.emoji, body: mineReaction.body }
+      : null,
+    partnerReaction: partnerReaction
+      ? { emoji: partnerReaction.emoji, body: partnerReaction.body }
+      : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -127,12 +140,20 @@ export type EntryActionResult = {
   entry?: EntryDTO;
 };
 
+/** 时间线每页条数（日粒度对齐） */
+const TIMELINE_PAGE = 20;
+/** 每侧预取上限，确保能凑满一页并探测是否还有更多 */
+const TIMELINE_FETCH = 40;
+
 export async function loadTimeline(opts?: {
   filter?: TimelineFilter;
   month?: string; // YYYY-MM
   q?: string;
+  /** 日粒度游标（YYYY-MM-DD）：只返回严格早于该日的条目；不传则取第一页 */
+  cursor?: string;
 }): Promise<{
   items: TimelineItem[];
+  nextCursor: string | null;
   stats: TimelineStats;
   partnerNickname: string;
   myNickname: string;
@@ -142,6 +163,10 @@ export async function loadTimeline(opts?: {
   const ctx = await requirePaired();
   const filter = opts?.filter ?? "all";
   const q = (opts?.q ?? "").trim().slice(0, 80);
+  const cursor =
+    opts?.cursor && /^\d{4}-\d{2}-\d{2}$/.test(opts.cursor)
+      ? opts.cursor
+      : null;
   const currentMonth = shanghaiMonth();
   const month = opts?.month && /^\d{4}-\d{2}$/.test(opts.month)
     ? opts.month
@@ -149,62 +174,99 @@ export async function loadTimeline(opts?: {
   const spaceId = ctx.membership.spaceId;
   const partner = partnerOf(ctx);
 
-  const [allEntries, allCheckIns] = await Promise.all([
-    prisma.entry.findMany({
-      where: {
-        spaceId,
-        AND: [
-          entryVisibleWhere(ctx.user.id),
-          ...(q
-            ? [
-                {
-                  OR: [
-                    { title: { contains: q } },
-                    { body: { contains: q } },
-                  ],
-                },
-              ]
-            : []),
-        ],
-      },
-      include: { images: true, reads: true },
-      orderBy: [{ day: "desc" }, { createdAt: "desc" }],
-    }),
-    q
-      ? Promise.resolve([])
-      : prisma.checkIn.findMany({
-          where: { spaceId },
-          orderBy: [{ day: "desc" }, { updatedAt: "desc" }],
-        }),
-  ]);
+  // 筛选条件下推到查询（分页后不能再全量内存过滤）
+  const filterDay: Record<string, unknown> | null =
+    filter === "week"
+      ? (() => {
+          const { start, end } = shanghaiWeekRange();
+          return { gte: start, lte: end };
+        })()
+      : filter === "thisMonth"
+        ? { startsWith: currentMonth }
+        : filter === "month"
+          ? { startsWith: month }
+          : null;
+  const filterAuthor: string | { not: string } | null =
+    filter === "mine"
+      ? ctx.user.id
+      : filter === "yours"
+        ? { not: ctx.user.id }
+        : null;
 
-  const stats: TimelineStats = {
-    total: allEntries.length,
-    mine: allEntries.filter((e) => e.authorId === ctx.user.id).length,
-    yours: allEntries.filter((e) => e.authorId !== ctx.user.id).length,
-    month: allEntries.filter((e) => e.day.startsWith(currentMonth)).length,
+  const entryWhere = {
+    spaceId,
+    AND: [
+      entryVisibleWhere(ctx.user.id),
+      ...(q
+        ? [
+            {
+              OR: [
+                { title: { contains: q } },
+                { body: { contains: q } },
+              ],
+            },
+          ]
+        : []),
+      ...(filterAuthor ? [{ authorId: filterAuthor }] : []),
+      ...(filterDay ? [{ day: filterDay }] : []),
+      ...(cursor ? [{ day: { lt: cursor } }] : []),
+    ],
+  };
+  const checkInWhere = {
+    spaceId,
+    ...(filterAuthor ? { authorId: filterAuthor } : {}),
+    ...(filterDay ? { day: filterDay } : {}),
+    ...(cursor ? { day: { lt: cursor } } : {}),
   };
 
-  let entries = allEntries;
-  let checkIns = allCheckIns;
+  const [entryRows, checkInRows, total, mine, yours, monthCount] =
+    await Promise.all([
+      prisma.entry.findMany({
+        where: entryWhere,
+        include: { images: true, reads: true, reactions: true },
+        orderBy: [{ day: "desc" }, { createdAt: "desc" }],
+        take: TIMELINE_FETCH,
+      }),
+      q
+        ? Promise.resolve([])
+        : prisma.checkIn.findMany({
+            where: checkInWhere,
+            orderBy: [{ day: "desc" }, { updatedAt: "desc" }],
+            take: TIMELINE_FETCH,
+          }),
+      prisma.entry.count({
+        where: { spaceId, AND: [entryVisibleWhere(ctx.user.id)] },
+      }),
+      prisma.entry.count({
+        where: {
+          spaceId,
+          AND: [entryVisibleWhere(ctx.user.id), { authorId: ctx.user.id }],
+        },
+      }),
+      prisma.entry.count({
+        where: {
+          spaceId,
+          AND: [
+            entryVisibleWhere(ctx.user.id),
+            { authorId: { not: ctx.user.id } },
+          ],
+        },
+      }),
+      prisma.entry.count({
+        where: {
+          spaceId,
+          AND: [
+            entryVisibleWhere(ctx.user.id),
+            { day: { startsWith: currentMonth } },
+          ],
+        },
+      }),
+    ]);
 
-  if (filter === "mine") {
-    entries = entries.filter((e) => e.authorId === ctx.user.id);
-    checkIns = checkIns.filter((c) => c.authorId === ctx.user.id);
-  } else if (filter === "yours") {
-    entries = entries.filter((e) => e.authorId !== ctx.user.id);
-    checkIns = checkIns.filter((c) => c.authorId !== ctx.user.id);
-  } else if (filter === "week") {
-    const { start, end } = shanghaiWeekRange();
-    entries = entries.filter((e) => e.day >= start && e.day <= end);
-    checkIns = checkIns.filter((c) => c.day >= start && c.day <= end);
-  } else if (filter === "thisMonth") {
-    entries = entries.filter((e) => e.day.startsWith(currentMonth));
-    checkIns = checkIns.filter((c) => c.day.startsWith(currentMonth));
-  } else if (filter === "month") {
-    entries = entries.filter((e) => e.day.startsWith(month));
-    checkIns = checkIns.filter((c) => c.day.startsWith(month));
-  }
+  const stats: TimelineStats = { total, mine, yours, month: monthCount };
+
+  const entries = entryRows;
+  const checkIns = checkInRows;
 
   const partnerId = partner?.userId;
   const entryItems: EntryListItem[] = entries.map((e) => ({
@@ -224,6 +286,11 @@ export async function loadTimeline(opts?: {
     partnerReadAt:
       e.authorId === ctx.user.id && partnerId
         ? (e.reads.find((r) => r.readerId === partnerId)?.readAt.toISOString() ??
+          null)
+        : null,
+    myReactionAt:
+      e.authorId === ctx.user.id
+        ? (e.reactions.find((r) => r.authorId === ctx.user.id)?.createdAt.toISOString() ??
           null)
         : null,
     createdAt: e.createdAt.toISOString(),
@@ -252,18 +319,35 @@ export async function loadTimeline(opts?: {
     }),
   );
 
-  const items: TimelineItem[] = [...entryItems, ...checkInItems].sort((a, b) => {
-    if (a.day !== b.day) return b.day.localeCompare(a.day);
-    // 同日：日记在前，同步细条在后
-    if (a.kind !== b.kind) return a.kind === "entry" ? -1 : 1;
-    if (a.kind === "entry" && b.kind === "entry") {
-      return b.createdAt.localeCompare(a.createdAt);
-    }
-    return 0;
-  });
+  const sorted: TimelineItem[] = [...entryItems, ...checkInItems].sort(
+    (a, b) => {
+      if (a.day !== b.day) return b.day.localeCompare(a.day);
+      // 同日：日记在前，同步细条在后
+      if (a.kind !== b.kind) return a.kind === "entry" ? -1 : 1;
+      if (a.kind === "entry" && b.kind === "entry") {
+        return b.createdAt.localeCompare(a.createdAt);
+      }
+      return 0;
+    },
+  );
+
+  // 日粒度对齐截断：页面尾部完整包含该日全部条目
+  let end = Math.min(TIMELINE_PAGE, sorted.length);
+  if (end < sorted.length) {
+    const boundaryDay = sorted[end - 1]!.day;
+    while (end < sorted.length && sorted[end]!.day === boundaryDay) end++;
+  }
+  const pageItems = sorted.slice(0, end);
+  const fetchCapped =
+    entryRows.length >= TIMELINE_FETCH || checkInRows.length >= TIMELINE_FETCH;
+  const nextCursor =
+    end < sorted.length || fetchCapped
+      ? (pageItems[pageItems.length - 1]?.day ?? null)
+      : null;
 
   return {
-    items,
+    items: pageItems,
+    nextCursor,
     stats,
     partnerNickname: partner?.nickname ?? "你",
     myNickname: ctx.membership.nickname,
@@ -280,7 +364,7 @@ export async function getEntryById(id: string): Promise<EntryDTO | null> {
       spaceId: ctx.membership.spaceId,
       ...entryVisibleWhere(ctx.user.id),
     },
-    include: { images: true, reads: true },
+    include: { images: true, reads: true, reactions: true },
   });
   if (!row) return null;
   return toEntryDTO(row, ctx);
@@ -458,5 +542,79 @@ export async function markEntryReadAction(
 
   revalidatePath("/journal");
   revalidatePath(`/journal/${entry.id}`);
+  return { ok: true };
+}
+
+const reactionSchema = z.object({
+  entryId: z.string().min(1),
+  emoji: z.string().trim().min(1).max(8),
+  body: z
+    .string()
+    .trim()
+    .max(REACTION_BODY_MAX, `最多 ${REACTION_BODY_MAX} 字`)
+    .optional()
+    .default(""),
+});
+
+/** P0-1：回应/修改回应（一条日记限一条/人） */
+export async function upsertEntryReactionAction(input: {
+  entryId: string;
+  emoji: string;
+  body?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await requirePaired();
+  const parsed = reactionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "参数无效" };
+  }
+  if (!REACTION_EMOJIS.includes(parsed.data.emoji as (typeof REACTION_EMOJIS)[number])) {
+    return { ok: false, error: "无效的表情" };
+  }
+
+  const entry = await prisma.entry.findFirst({
+    where: {
+      id: parsed.data.entryId,
+      spaceId: ctx.membership.spaceId,
+    },
+  });
+  if (!entry) return { ok: false, error: "日记不存在" };
+  if (entry.authorId === ctx.user.id) {
+    return { ok: false, error: "不能回应自己的日记" };
+  }
+
+  await prisma.entryReaction.upsert({
+    where: {
+      entryId_authorId: {
+        entryId: entry.id,
+        authorId: ctx.user.id,
+      },
+    },
+    create: {
+      entryId: entry.id,
+      authorId: ctx.user.id,
+      emoji: parsed.data.emoji,
+      body: parsed.data.body || null,
+    },
+    update: {
+      emoji: parsed.data.emoji,
+      body: parsed.data.body || null,
+    },
+  });
+
+  revalidatePath("/journal");
+  revalidatePath(`/journal/${entry.id}`);
+  return { ok: true };
+}
+
+/** P0-1：撤回回应 */
+export async function deleteEntryReactionAction(
+  entryId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await requirePaired();
+  await prisma.entryReaction.deleteMany({
+    where: { entryId, authorId: ctx.user.id },
+  });
+  revalidatePath("/journal");
+  revalidatePath(`/journal/${entryId}`);
   return { ok: true };
 }

@@ -196,42 +196,60 @@ export function DaysView({
               <p className="text-[13px] text-ink-tertiary">这一天还没有标记</p>
             ) : (
               <ul className="divide-y divide-line border-y border-line">
-                {dayMarks.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      className="flex w-full flex-col items-start py-3.5 text-left hover:bg-white/25"
-                      onClick={() => {
-                        setEditing(m);
-                        setSheetOpen(true);
-                      }}
-                    >
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-[15px] font-medium text-ink">
-                          {m.title}
-                        </span>
-                        {m.yearly ? (
-                          <span className="text-[11px] tracking-[0.04em] text-ink-tertiary">
-                            周年
+                {dayMarks.map((m) =>
+                  m.id === "system-anniversary" ? (
+                    <li key={m.id}>
+                      <div className="flex w-full flex-col items-start py-3.5">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[15px] font-medium text-ink">
+                            {m.title}
                           </span>
-                        ) : null}
-                        <span
-                          className={cn(
-                            "text-[12px]",
-                            m.authorSide === "me" ? "text-me" : "text-you",
-                          )}
-                        >
-                          {m.authorSide === "me" ? "我" : m.authorNickname}
-                        </span>
-                      </div>
-                      {m.note ? (
-                        <p className="mt-1 text-[13px] text-ink-secondary">
-                          {m.note}
+                          <span className="text-[11px] tracking-[0.04em] text-ink-tertiary">
+                            周年 · 纪念日
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[12px] text-ink-tertiary">
+                          由「在一起那天」自动生成，可在「我的」页修改
                         </p>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
+                      </div>
+                    </li>
+                  ) : (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col items-start py-3.5 text-left hover:bg-white/25"
+                        onClick={() => {
+                          setEditing(m);
+                          setSheetOpen(true);
+                        }}
+                      >
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[15px] font-medium text-ink">
+                            {m.title}
+                          </span>
+                          {m.yearly ? (
+                            <span className="text-[11px] tracking-[0.04em] text-ink-tertiary">
+                              周年
+                            </span>
+                          ) : null}
+                          <span
+                            className={cn(
+                              "text-[12px]",
+                              m.authorSide === "me" ? "text-me" : "text-you",
+                            )}
+                          >
+                            {m.authorSide === "me" ? "我" : m.authorNickname}
+                          </span>
+                        </div>
+                        {m.note ? (
+                          <p className="mt-1 text-[13px] text-ink-secondary">
+                            {m.note}
+                          </p>
+                        ) : null}
+                      </button>
+                    </li>
+                  ),
+                )}
               </ul>
             )}
           </section>
@@ -244,28 +262,44 @@ export function DaysView({
               <p className="text-[13px] text-ink-tertiary">暂无临近标记</p>
             ) : (
               <ul className="space-y-2">
-                {upcoming.slice(0, 12).map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      className="flex w-full items-baseline gap-3 rounded-[12px] px-2 py-2 text-left hover:bg-white/30"
-                      onClick={() => {
-                        setEditing(m);
-                        setSheetOpen(true);
-                      }}
-                    >
-                      <span className="w-12 shrink-0 text-[13px] text-ink-secondary">
-                        {formatDayShort(m.nextDay)}
-                      </span>
-                      <span className="text-[14px] font-medium text-ink">
-                        {m.title}
-                      </span>
-                      {m.yearly ? (
-                        <span className="text-[11px] text-ink-tertiary">周年</span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
+                {upcoming.slice(0, 12).map((m) =>
+                  m.id === "system-anniversary" ? (
+                    <li key={m.id}>
+                      <div className="flex w-full items-baseline gap-3 rounded-[12px] px-2 py-2">
+                        <span className="w-12 shrink-0 text-[13px] text-ink-secondary">
+                          {formatDayShort(m.nextDay)}
+                        </span>
+                        <span className="text-[14px] font-medium text-ink">
+                          {m.title}
+                        </span>
+                        <span className="text-[11px] text-ink-tertiary">
+                          周年 · 纪念日
+                        </span>
+                      </div>
+                    </li>
+                  ) : (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        className="flex w-full items-baseline gap-3 rounded-[12px] px-2 py-2 text-left hover:bg-white/30"
+                        onClick={() => {
+                          setEditing(m);
+                          setSheetOpen(true);
+                        }}
+                      >
+                        <span className="w-12 shrink-0 text-[13px] text-ink-secondary">
+                          {formatDayShort(m.nextDay)}
+                        </span>
+                        <span className="text-[14px] font-medium text-ink">
+                          {m.title}
+                        </span>
+                        {m.yearly ? (
+                          <span className="text-[11px] text-ink-tertiary">周年</span>
+                        ) : null}
+                      </button>
+                    </li>
+                  ),
+                )}
               </ul>
             )}
           </section>

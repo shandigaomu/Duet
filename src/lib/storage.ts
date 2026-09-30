@@ -76,7 +76,7 @@ function cosConfig(): CosConfig | null {
   };
 }
 
-function useCos() {
+function hasCosConfig() {
   return cosConfig() !== null;
 }
 
@@ -200,7 +200,7 @@ export function contentTypeFromKey(key: string) {
 }
 
 export function storageDriver(): "cos" | "local" {
-  return useCos() ? "cos" : "local";
+  return hasCosConfig() ? "cos" : "local";
 }
 
 export const UPLOAD_MAX_BYTES = MAX_BYTES;

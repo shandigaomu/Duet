@@ -23,6 +23,7 @@ import { MOOD_BY_ID, type MoodId } from "@/lib/checkin";
 
 type JournalViewProps = {
   initialItems: TimelineItem[];
+  nextCursor: string | null;
   stats: TimelineStats;
   partnerNickname: string;
   initialFilter?: TimelineFilter;
@@ -42,6 +43,7 @@ const FILTERS: { id: TimelineFilter; label: string }[] = [
 
 export function JournalView({
   initialItems,
+  nextCursor: initialNextCursor,
   stats,
   partnerNickname,
   initialFilter = "all",
@@ -54,6 +56,42 @@ export function JournalView({
   const [month, setMonth] = useState(initialMonth || currentMonth);
   const [query, setQuery] = useState(initialQuery);
   const [pending, startTransition] = useTransition();
+  const [items, setItems] = useState<TimelineItem[]>(initialItems);
+  const [nextCursor, setNextCursor] = useState<string | null>(
+    initialNextCursor,
+  );
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError(null);
+    try {
+      const params = new URLSearchParams();
+      if (filter !== "all") params.set("filter", filter);
+      if (filter === "month") params.set("month", month);
+      const trimmed = query.trim();
+      if (trimmed) params.set("q", trimmed);
+      params.set("cursor", nextCursor);
+      const res = await fetch(`/api/timeline?${params.toString()}`);
+      const data = (await res.json()) as {
+        ok?: boolean;
+        items?: TimelineItem[];
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.items) {
+        throw new Error(data.error || "加载失败");
+      }
+      setItems((prev) => [...prev, ...data.items!]);
+      setNextCursor(data.nextCursor ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   function pushParams(
     next: TimelineFilter,
@@ -80,7 +118,7 @@ export function JournalView({
     pushParams(filter, month, query);
   }
 
-  const months = groupByMonth(initialItems);
+  const months = groupByMonth(items);
 
   return (
     <>
@@ -143,7 +181,7 @@ export function JournalView({
           </div>
         }
       >
-        {initialItems.length === 0 ? (
+        {items.length === 0 ? (
           <div className="glass-panel flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
             <p className="font-display text-[22px] text-ink-secondary">
               还没有记录
@@ -195,6 +233,11 @@ export function JournalView({
                             {item.authorSide === "me" && item.partnerReadAt ? (
                               <span className="text-[11px] text-ink-tertiary">
                                 已读
+                              </span>
+                            ) : null}
+                            {item.authorSide === "me" && item.myReactionAt ? (
+                              <span className="text-[11px] text-ink-tertiary">
+                                已回应
                               </span>
                             ) : null}
                           </div>
@@ -251,6 +294,28 @@ export function JournalView({
             ))}
           </div>
         )}
+
+        {loadError ? (
+          <p className="mt-3 text-[13px] text-danger" role="alert">
+            {loadError}
+          </p>
+        ) : null}
+        {nextCursor ? (
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={loadingMore || pending}
+              className="rounded-[12px] bg-white/45 px-5 py-2.5 text-[13px] text-ink-secondary transition-colors hover:bg-white/60 hover:text-ink disabled:opacity-50"
+            >
+              {loadingMore ? "加载中…" : "加载更多"}
+            </button>
+          </div>
+        ) : items.length > 0 ? (
+          <p className="mt-6 text-center text-[12px] text-ink-tertiary">
+            已经到底啦
+          </p>
+        ) : null}
       </Workbench>
 
       <Link

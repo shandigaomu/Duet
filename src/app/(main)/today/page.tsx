@@ -2,6 +2,7 @@ import { TodayView } from "@/components/today/TodayView";
 import { loadUpcomingHint } from "@/server/daymark-actions";
 import { loadTodayCheckIns } from "@/server/checkin-actions";
 import { countEntriesForDay } from "@/server/entry-actions";
+import { requirePaired } from "@/lib/guards";
 
 export const metadata = { title: "今日" };
 
@@ -12,6 +13,8 @@ export default async function TodayPage() {
     loadUpcomingHint(),
   ]);
 
+  const { membership } = await requirePaired();
+
   return (
     <TodayView
       key={`${data.day}-${data.mine?.updatedAt ?? "m"}-${data.yours?.updatedAt ?? "y"}`}
@@ -21,6 +24,7 @@ export default async function TodayPage() {
       partnerNickname={data.partnerNickname}
       todayEntryCount={diary.count}
       dayHint={dayHint}
+      anniversaryDay={membership.space.anniversaryDay ?? null}
     />
   );
 }

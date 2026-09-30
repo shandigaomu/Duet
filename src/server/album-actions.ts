@@ -3,6 +3,9 @@
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
 
+/** 相册每页张数 */
+const ALBUM_PAGE = 60;
+
 export type AlbumPhoto = {
   id: string;
   url: string;
@@ -16,9 +19,17 @@ export type AlbumPhoto = {
 
 export async function loadAlbum(opts?: {
   source?: "all" | "mine" | "yours";
-}): Promise<{ photos: AlbumPhoto[]; partnerNickname: string }> {
+  /** 游标：上一页最后一张图的 id（Prisma 原生 cursor 分页） */
+  cursor?: string;
+  take?: number;
+}): Promise<{
+  photos: AlbumPhoto[];
+  partnerNickname: string;
+  nextCursor: string | null;
+}> {
   const ctx = await requirePaired();
   const source = opts?.source ?? "all";
+  const take = Math.min(Math.max(opts?.take ?? ALBUM_PAGE, 1), 120);
   const partner = ctx.membership.space.members.find(
     (m) => m.userId !== ctx.user.id,
   );
@@ -48,9 +59,14 @@ export async function loadAlbum(opts?: {
       },
     },
     orderBy: [{ entry: { day: "desc" } }, { sortOrder: "asc" }],
+    ...(opts?.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+    // 多取 1 条探测是否还有下一页
+    take: take + 1,
   });
 
-  const photos: AlbumPhoto[] = rows.map((r) => ({
+  const hasMore = rows.length > take;
+  const pageRows = rows.slice(0, take);
+  const photos: AlbumPhoto[] = pageRows.map((r) => ({
     id: r.id,
     url: r.url,
     entryId: r.entry.id,
@@ -63,6 +79,9 @@ export async function loadAlbum(opts?: {
         : partnerNickname,
     createdAt: r.entry.createdAt.toISOString(),
   }));
+  const nextCursor = hasMore
+    ? (pageRows[pageRows.length - 1]?.id ?? null)
+    : null;
 
-  return { photos, partnerNickname };
+  return { photos, partnerNickname, nextCursor };
 }

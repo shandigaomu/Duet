@@ -29,8 +29,12 @@ export function AvatarCropDialog({
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
-    setSrc(url);
-    return () => URL.revokeObjectURL(url);
+    // 延迟到渲染后赋值，避免同步 setState 触发级联渲染（react-hooks/set-state-in-effect）
+    const t = window.setTimeout(() => setSrc(url), 0);
+    return () => {
+      window.clearTimeout(t);
+      URL.revokeObjectURL(url);
+    };
   }, [file]);
 
   useEffect(() => {

@@ -32,6 +32,7 @@ export default async function JournalPage({ searchParams }: Props) {
     <JournalView
       key={`${filter}-${month ?? data.currentMonth}-${data.q}`}
       initialItems={data.items}
+      nextCursor={data.nextCursor}
       stats={data.stats}
       partnerNickname={data.partnerNickname}
       initialFilter={filter}

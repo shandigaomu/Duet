@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -154,6 +155,57 @@ export async function unpairSpaceAction(): Promise<ActionResult> {
   });
 
   redirect("/create");
+}
+
+const SPACE_NAME_MAX = 20;
+
+/** P0-2：更新空间名 / 在一起那天（可选字段，清空 = 移除） */
+export async function updateSpaceInfoAction(input: {
+  name?: string | null;
+  anniversaryDay?: string | null;
+}): Promise<ActionResult> {
+  const user = await requireSessionUser();
+  if (!user) return { ok: false, error: "请先登录" };
+
+  const membership = await prisma.spaceMember.findUnique({
+    where: { userId: user.id },
+  });
+  if (!membership) return { ok: false, error: "你不在任何空间中" };
+
+  const schema = z.object({
+    name: z
+      .string()
+      .trim()
+      .max(SPACE_NAME_MAX, `空间名最多 ${SPACE_NAME_MAX} 字`)
+      .optional()
+      .nullable(),
+    anniversaryDay: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式无效")
+      .optional()
+      .nullable(),
+  });
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "参数无效" };
+  }
+
+  await prisma.space.update({
+    where: { id: membership.spaceId },
+    data: {
+      ...(parsed.data.name !== undefined
+        ? { name: parsed.data.name || null }
+        : {}),
+      ...(parsed.data.anniversaryDay !== undefined
+        ? { anniversaryDay: parsed.data.anniversaryDay || null }
+        : {}),
+    },
+  });
+
+  revalidatePath("/me");
+  revalidatePath("/today");
+  revalidatePath("/journal/days");
+  return { ok: true };
 }
 
 /** 创建方等待页轮询：对方加入后返回 ready */

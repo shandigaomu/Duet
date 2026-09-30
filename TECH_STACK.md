@@ -36,7 +36,7 @@
 | 今日同步、日记、时间线以读多写少为主 | 进入页面拉取；**不做 WebSocket**；可选短轮询或手动刷新 |
 | 图文上传（头像方图、今日 1 张、日记 0–9） | 上传 API → 对象存储；MySQL 只存 URL 与元数据 |
 | V1 仅浅色 Coastal Dusk | CSS 变量 + Tailwind；不预留深色切换开关 |
-| 邮箱密码，不做微信等 | Better Auth email/password；微信小程序登录/绑定与订阅消息见 PRODUCT §3.3.1（V3） |
+| 邮箱密码，不做微信等 | Better Auth email/password；微信小程序方案已移除，通知改走 Web Push + 邮件（见 PRODUCT §3.3，2026-09-29） |
 | 「我们」等 V2 能力 | 数据模型预留扩展位即可，**不写 V2 路由与表** |
 | 已有 Docker 基建 | Duet 以容器接入同一套编排；复用 MySQL /（可选）Redis，不另起一套 PaaS |
 

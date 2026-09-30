@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import {
   applyThemeClass,
   readThemePreference,
@@ -9,38 +9,38 @@ import {
   type ThemePreference,
 } from "@/lib/theme";
 
+function subscribeTheme(onChange: () => void) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  window.addEventListener("duet-theme-change", onChange);
+  mq.addEventListener("change", onChange);
+  return () => {
+    window.removeEventListener("duet-theme-change", onChange);
+    mq.removeEventListener("change", onChange);
+  };
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(false);
+  // 首帧前由 layout 内联 boot 脚本落主题类；这里订阅后续变化（偏好或系统）并重新同步
+  const [, syncTheme] = useReducer((x: number) => x + 1, 0);
+
+  useEffect(() => subscribeTheme(syncTheme), []);
 
   useEffect(() => {
-    function sync() {
-      const pref = readThemePreference();
-      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      applyThemeClass(resolveTheme(pref, systemDark));
-    }
-    sync();
-    setReady(true);
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    mq.addEventListener("change", sync);
-    window.addEventListener("duet-theme-change", sync);
-    return () => {
-      mq.removeEventListener("change", sync);
-      window.removeEventListener("duet-theme-change", sync);
-    };
-  }, []);
+    const pref = readThemePreference();
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    applyThemeClass(resolveTheme(pref, systemDark));
+  });
 
-  return (
-    <div className={ready ? undefined : undefined} suppressHydrationWarning>
-      {children}
-    </div>
-  );
+  return <>{children}</>;
 }
 
 export function ThemePicker() {
   const [pref, setPref] = useState<ThemePreference>("system");
 
   useEffect(() => {
-    setPref(readThemePreference());
+    // 延迟到渲染后读取，避免同步 setState 触发级联渲染（react-hooks/set-state-in-effect）
+    const t = window.setTimeout(() => setPref(readThemePreference()), 0);
+    return () => window.clearTimeout(t);
   }, []);
 
   function choose(next: ThemePreference) {
@@ -64,6 +64,7 @@ export function ThemePicker() {
           key={o.id}
           type="button"
           onClick={() => choose(o.id)}
+          aria-pressed={pref === o.id}
           className={`rounded-[10px] px-3 py-1.5 text-[13px] ${
             pref === o.id
               ? "bg-brand text-white"
