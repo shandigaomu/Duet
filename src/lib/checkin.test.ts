@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateWeeklyMood,
+  longDistanceLine,
   recentWeekStarts,
   streakBadge,
   weeklyMoodSummary,
@@ -157,5 +158,31 @@ describe("streakBadge", () => {
 
   it("空数据 → null（安静消失）", () => {
     expect(streakBadge({ days: [], thisWeekStart: THIS_MONDAY })).toBeNull();
+  });
+});
+
+// —— P4-W3 异地徽标 ——
+
+describe("longDistanceLine", () => {
+  it("双方城市不同 → 陈述行", () => {
+    expect(longDistanceLine("上海", "东京", "小美")).toBe(
+      "🌏 异地中 · 我在上海 · 小美在东京",
+    );
+  });
+
+  it("默认对方称呼为 TA", () => {
+    expect(longDistanceLine("上海", "东京")).toBe(
+      "🌏 异地中 · 我在上海 · TA在东京",
+    );
+  });
+
+  it("同城不显示（trim 后比较）", () => {
+    expect(longDistanceLine(" 上海 ", "上海")).toBeNull();
+  });
+
+  it("任一方未填不显示", () => {
+    expect(longDistanceLine(null, "东京")).toBeNull();
+    expect(longDistanceLine("上海", null)).toBeNull();
+    expect(longDistanceLine("", "东京")).toBeNull();
   });
 });

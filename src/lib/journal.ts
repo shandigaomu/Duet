@@ -73,7 +73,15 @@ export type CheckInSnapshotItem = {
   yoursMood: string | null;
 };
 
-export type TimelineItem = EntryListItem | CheckInSnapshotItem;
+/** P3-T11：达成目标的时间线特殊行（只陈述事实） */
+export type GoalDoneItem = {
+  kind: "goal";
+  id: string;
+  day: string;
+  title: string;
+};
+
+export type TimelineItem = EntryListItem | CheckInSnapshotItem | GoalDoneItem;
 
 export type TimelineStats = {
   total: number;
@@ -156,6 +164,19 @@ export function formatDayShort(day: string) {
 export function formatMonthHeading(day: string) {
   const [, m] = day.split("-");
   return `${Number(m)}月`;
+}
+
+/**
+ * P5-O6：首行截断预览的单一实现（原仅存于 reaction-wall 的私有 firstLine）。
+ * 取正文第一段非空行，超长截断加省略号；回应墙与详情侧共用同一断点口径。
+ */
+export function firstLinePreview(body: string, max = 40): string {
+  const line =
+    body
+      .split(/\n/)
+      .map((l) => l.trim())
+      .find(Boolean) ?? "";
+  return line.length > max ? `${line.slice(0, max)}…` : line;
 }
 
 export function previewBody(body: string, max = 72) {

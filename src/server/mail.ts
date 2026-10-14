@@ -48,7 +48,13 @@ function shell(title: string, inner: string) {
   </div></body></html>`;
 }
 
-type MailKind = "checkin" | "entry" | "list" | "collab-invite" | "collab-done";
+type MailKind =
+  | "checkin"
+  | "entry"
+  | "list"
+  | "collab-invite"
+  | "collab-done"
+  | "goal";
 
 const KIND_TEXT: Record<MailKind, string> = {
   checkin: "更新了今日",
@@ -56,6 +62,7 @@ const KIND_TEXT: Record<MailKind, string> = {
   list: "完成了清单里的一个小愿望",
   "collab-invite": "想邀你合写一篇日记",
   "collab-done": "写好了 TA 那一段合写",
+  goal: "推进了你们的共同目标",
 };
 
 /** 即时事件邮件：默认关闭（NotifyPref.emailEnabled），偏好缺失不发送 */

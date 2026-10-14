@@ -8,12 +8,13 @@ import {
 } from "@/server/entry-actions";
 import { loadCollabCards } from "@/server/collab-view";
 import { loadTodayLetterHint } from "@/server/letter-hint";
+import { loadGoalHint } from "@/server/goal-actions";
 import { requirePaired } from "@/lib/guards";
 
 export const metadata = { title: "今日" };
 
 export default async function TodayPage() {
-  const [data, diary, dayHint, onThisDay, onThisDayList, letterHint] =
+  const [data, diary, dayHint, onThisDay, onThisDayList, letterHint, goalHint] =
     await Promise.all([
       loadTodayCheckIns(),
       countEntriesForDay(),
@@ -21,6 +22,7 @@ export default async function TodayPage() {
       loadTodayOnThisDay(),
       loadTodayOnThisDayList(),
       loadTodayLetterHint(),
+      loadGoalHint(),
     ]);
 
   const { user, membership } = await requirePaired();
@@ -50,6 +52,7 @@ export default async function TodayPage() {
       streakBadge={data.streakBadge}
       onThisDayList={onThisDayList}
       letterHint={letterHint}
+      goalHint={goalHint}
     />
   );
 }

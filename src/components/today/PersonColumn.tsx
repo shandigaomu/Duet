@@ -1,7 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { formatSyncTime, type CheckIn } from "@/lib/checkin";
+import {
+  cityCompanyBadge,
+  formatSyncTime,
+  type CheckIn,
+} from "@/lib/checkin";
 import { MoodPicker } from "@/components/today/MoodPicker";
 
 type PersonColumnProps = {
@@ -37,6 +41,7 @@ export function PersonColumn({
   headerLabel,
 }: PersonColumnProps) {
   const isMe = who === "me";
+  const badge = checkIn ? cityCompanyBadge(checkIn.city, checkIn.company) : null;
 
   return (
     <section className={cn("flex min-h-[200px] flex-col", className)}>
@@ -106,6 +111,16 @@ export function PersonColumn({
         >
           {checkIn.mood ? (
             <MoodPicker value={checkIn.mood} onChange={() => {}} readOnly size="sm" />
+          ) : null}
+          {badge ? (
+            <span
+              className={cn(
+                "mt-2 inline-block rounded-full px-2.5 py-0.5 text-[11px]",
+                isMe ? "bg-me-soft text-me" : "bg-you-soft text-you",
+              )}
+            >
+              {badge}
+            </span>
           ) : null}
 
           <p className="mt-3 text-[16px] leading-relaxed text-ink">

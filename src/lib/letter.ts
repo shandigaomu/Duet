@@ -52,6 +52,29 @@ export function letterState(unlockDay: string, today: string): LetterState {
   return "opened";
 }
 
+/** P4-W2：日期字符串 +1 天（YYYY-MM-DD，无时区歧义走 UTC） */
+export function addDay(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const dt = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + 1));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * P4-W2 前夜提醒：解锁日前一天、且写信方本人在访（收信方自己打开时人在场，不需要推）
+ * → 返回收信方 userId；其余 null（不推）。
+ */
+export function dayBeforeNotifyTarget(opts: {
+  unlockDay: string;
+  today: string;
+  authorId: string;
+  viewerId: string;
+  partnerId: string | null;
+}): string | null {
+  if (opts.unlockDay !== addDay(opts.today)) return null;
+  if (opts.authorId !== opts.viewerId) return null;
+  return opts.partnerId ?? null;
+}
+
 /** P3-T4：距解锁还有几天（0 = 今天解锁；负数 = 已过） */
 export function daysUntilUnlock(unlockDay: string, today: string): number {
   const parse = (s: string) => {

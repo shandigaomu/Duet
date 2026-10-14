@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { ArrowLeft, Pin, Trash2 } from "lucide-react";
+import { ArrowLeft, Flame, Pin, Trash2 } from "lucide-react";
 import { Workbench } from "@/components/shell/Workbench";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
@@ -23,19 +23,25 @@ export function NotesView({ notes, pinned }: NotesViewProps) {
   const router = useRouter();
   const [body, setBody] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [burn, setBurn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await createNoteAction({ body, parentId: replyTo });
+      const res = await createNoteAction({
+        body,
+        parentId: replyTo,
+        burnAfterReading: burn,
+      });
       if (!res.ok) {
         setError(res.error || "发送失败");
         return;
       }
       setBody("");
       setReplyTo(null);
+      setBurn(false);
       router.refresh();
     });
   }
@@ -47,8 +53,13 @@ export function NotesView({ notes, pinned }: NotesViewProps) {
     });
   }
 
-  function remove(id: string) {
-    if (!window.confirm("删除这条悄悄话？")) return;
+  function remove(id: string, isBurn = false) {
+    if (
+      !window.confirm(
+        isBurn ? "这是阅后即焚的消息，删了就彻底没了，确定？" : "删除这条悄悄话？",
+      )
+    )
+      return;
     startTransition(async () => {
       const res = await deleteNoteAction(id);
       if (!res.ok) setError(res.error || "删除失败");
@@ -110,9 +121,27 @@ export function NotesView({ notes, pinned }: NotesViewProps) {
           className="w-full resize-none rounded-[14px] border border-line bg-white/45 px-3 py-2.5 text-[14px] outline-none focus:border-brand"
         />
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-[12px] text-ink-tertiary">
-            {body.length}/{NOTE_BODY_MAX}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] text-ink-tertiary">
+              {body.length}/{NOTE_BODY_MAX}
+            </span>
+            {/* P3-T8：阅后即焚开关（与置顶互斥，服务端恻底） */}
+            <button
+              type="button"
+              onClick={() => setBurn((v) => !v)}
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
+                burn
+                  ? "border-signal bg-signal/10 text-signal"
+                  : "border-line text-ink-tertiary hover:text-ink-secondary",
+              )}
+              aria-pressed={burn}
+              title="对方读过后 24 小时自动消失，不进回收站"
+            >
+              <Flame className="size-3.5" strokeWidth={1.75} />
+              阅后即焚
+            </button>
+          </div>
           <Button
             className="h-9 px-4"
             onClick={submit}
@@ -137,24 +166,38 @@ export function NotesView({ notes, pinned }: NotesViewProps) {
                   {n.authorSide === "me" ? "我" : n.authorNickname}
                   {n.pinned ? " · 置顶" : ""}
                 </p>
-                <p className="mt-1 text-[15px] text-ink">{n.body}</p>
+                <p className={cn(
+                  "mt-1 text-[15px]",
+                  // P3-T8：自己发的焚毁信标灰 + 🔥（自己永远可见）
+                  n.burn && n.authorSide === "me" ? "text-ink-tertiary italic" : "text-ink",
+                )}>
+                  {n.burn ? "🔥 " : ""}{n.body}
+                </p>
+                {n.burn && n.authorSide === "me" ? (
+                  <p className="mt-0.5 text-[11px] text-ink-tertiary">
+                    {n.readAt ? "对方已读 · 24 小时后会自动消失" : "对方读过后开始计时，24 小时后消失"}
+                  </p>
+                ) : null}
               </div>
+              {/* P3-T8：焚毁信与置顶互斥，不显示置顶按钮 */}
               <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  onClick={() => pin(n.id)}
-                  className={cn(
-                    "rounded p-1.5 text-ink-tertiary hover:text-brand",
-                    n.pinned && "text-brand",
-                  )}
-                  aria-label={n.pinned ? "取消置顶" : "置顶"}
-                >
-                  <Pin className="size-3.5" strokeWidth={1.75} />
-                </button>
+                {!n.burn ? (
+                  <button
+                    type="button"
+                    onClick={() => pin(n.id)}
+                    className={cn(
+                      "rounded p-1.5 text-ink-tertiary hover:text-brand",
+                      n.pinned && "text-brand",
+                    )}
+                    aria-label={n.pinned ? "取消置顶" : "置顶"}
+                  >
+                    <Pin className="size-3.5" strokeWidth={1.75} />
+                  </button>
+                ) : null}
                 {n.authorSide === "me" ? (
                   <button
                     type="button"
-                    onClick={() => remove(n.id)}
+                    onClick={() => remove(n.id, n.burn)}
                     className="rounded p-1.5 text-ink-tertiary hover:text-danger"
                     aria-label="删除"
                   >
@@ -182,11 +225,11 @@ export function NotesView({ notes, pinned }: NotesViewProps) {
                     >
                       {r.authorSide === "me" ? "我" : r.authorNickname}
                     </p>
-                    <p className="text-[14px] text-ink-secondary">{r.body}</p>
+                    {r.burn ? "🔥 " : ""}{r.body}
                     {r.authorSide === "me" ? (
                       <button
                         type="button"
-                        onClick={() => remove(r.id)}
+                        onClick={() => remove(r.id, r.burn)}
                         className="mt-0.5 text-[11px] text-ink-tertiary hover:text-danger"
                       >
                         删除

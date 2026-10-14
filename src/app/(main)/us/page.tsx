@@ -11,6 +11,8 @@ export default async function UsPage() {
       photoCount={data.photoCount}
       noteCount={data.noteCount}
       letterCount={data.letterCount}
+      activeGoalCount={data.activeGoalCount}
+      reactionCount={data.reactionCount}
     />
   );
 }

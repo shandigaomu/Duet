@@ -27,13 +27,25 @@ type DaysViewProps = {
   dayMarks: DayMarkDTO[];
   upcoming: DayMarkDTO[];
   past: DayMarkDTO[];
-  /** P2-N1：当月心情点（心情月历） */
+  /** P2-N1：当月心情点（心情月历；P3-T7 顺带 city/company） */
   moodDots?: Array<{
     day: string;
     side: "me" | "you";
     mood: "happy" | "ok" | "sad" | null;
+    city?: string | null;
+    company?: string | null;
   }>;
 };
+
+/** P3-T7：当天两个人的城市/陪伴提示（tooltip 用，仅一份时才显示） */
+function cityOf(
+  moods: Array<{ city?: string | null; company?: string | null }>,
+) {
+  if (moods.length !== 1) return undefined;
+  const m = moods[0]!;
+  if (!m.city && !m.company) return undefined;
+  return `📍 ${m.city ?? ""}${m.city && m.company ? " · " : ""}${m.company ?? ""}`;
+}
 
 /** 心情三档 → 点在格子内的纵向位置（上/中/下） */
 function moodPosition(mood: "happy" | "ok" | "sad" | null) {
@@ -63,14 +75,19 @@ export function DaysView({
   const marked = new Set(markedDays);
   const grid = buildMonthGrid(month);
 
-  // P2-N1：按日聚合心情点
+  // P2-N1：按日聚合心情点（P3-T7：城市徽记 tooltip）
   const moodByDay = new Map<
     string,
-    Array<{ side: "me" | "you"; mood: "happy" | "ok" | "sad" | null }>
+    Array<{
+      side: "me" | "you";
+      mood: "happy" | "ok" | "sad" | null;
+      city?: string | null;
+      company?: string | null;
+    }>
   >();
   for (const dot of moodDots) {
     const list = moodByDay.get(dot.day) ?? [];
-    list.push({ side: dot.side, mood: dot.mood });
+    list.push({ side: dot.side, mood: dot.mood, city: dot.city, company: dot.company });
     moodByDay.set(dot.day, list);
   }
 
@@ -207,7 +224,10 @@ export function DaysView({
                     ) : null}
                     {/* P2-N1：心情点层（me 左 you 右，心情三档定高度，空心情空心圈） */}
                     {dayMoods.length > 0 ? (
-                      <span className="pointer-events-none absolute inset-x-1.5 inset-y-1.5">
+                      <span
+                        className="pointer-events-none absolute inset-x-1.5 inset-y-1.5"
+                        title={cityOf(dayMoods)}
+                      >
                         {dayMoods.slice(0, 2).map((m, idx) => (
                           <span
                             key={idx}

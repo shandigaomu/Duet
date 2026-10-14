@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { RefreshCw } from "lucide-react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { RefreshCw, Timer, TimerOff } from "lucide-react";
 import { CollabInviteCard } from "@/components/today/CollabInviteCard";
 import { PartnerClock } from "@/components/today/PartnerClock";
 import { PersonColumn } from "@/components/today/PersonColumn";
@@ -14,7 +14,19 @@ import {
   WorkbenchToolbar,
 } from "@/components/shell/Workbench";
 import { Button } from "@/components/ui/Button";
-import { formatTodayLabel, type CheckIn, type StreakBadge } from "@/lib/checkin";
+import {
+  formatTodayLabel,
+  longDistanceLine,
+  type CheckIn,
+  type StreakBadge,
+} from "@/lib/checkin";
+import {
+  HEARTBEAT_IDLE_MS,
+  HEARTBEAT_MS,
+  setHeartbeatRate,
+  useHeartbeat,
+} from "@/lib/heartbeat";
+import { dayLeftLine } from "@/lib/goal";
 import type { DayMarkHint } from "@/lib/daymark";
 import type { OnThisDayItem } from "@/lib/journal";
 import { daysSinceAnniversary } from "@/lib/space";
@@ -24,7 +36,9 @@ import {
 } from "@/server/checkin-actions";
 
 const POLL_KEY = "duet.today.poll";
-const POLL_MS = 45_000;
+
+/** P5-O2：弹层保存后的满速短窗口 */
+const STABLE_BOOST_MS = 90_000;
 
 type TodayViewProps = {
   initialMine: CheckIn | null;
@@ -59,6 +73,16 @@ type TodayViewProps = {
   onThisDayList?: { id: string; yearsAgo: number; title: string; categoryLabel: string } | null;
   /** P3-T4：最近一封待解锁信（收信方 title 置 null） */
   letterHint?: { unlockDay: string; title: string | null; daysLeft: number } | null;
+  /** P3-T11：最新一个进行中目标（只一条） */
+  goalHint?: {
+    id: string;
+    title: string;
+    doneCount: number;
+    totalCount: number;
+    targetDay?: string | null;
+    /** P4-W6：距目标日天数（null = 未设；0 = 就是今天；负 = 已过期未完成） */
+    daysLeft?: number | null;
+  } | null;
 };
 
 export function TodayView({
@@ -78,6 +102,7 @@ export function TodayView({
   streakBadge = null,
   onThisDayList = null,
   letterHint = null,
+  goalHint = null,
 }: TodayViewProps) {
   const router = useRouter();
   const dateLabel = formatTodayLabel();
@@ -93,6 +118,12 @@ export function TodayView({
   const [hugGiven, setHugGiven] = useState(hugGivenByMe);
   const [hugging, setHugging] = useState(false);
   const [hugPulse, setHugPulse] = useState(false);
+  /** P5-O2：刚保存过（满速保底窗口，到点自动过期） */
+  const [savedRecently, setSavedRecently] = useState(false);
+
+  const syncedCount = Number(Boolean(mine)) + Number(Boolean(yours));
+  // P5-O2：双方都已同步、对方已读且不在刚保存的满速窗口内 → 心跳降为 3 分钟
+  const dataStable = syncedCount === 2 && !partnerWasUnread && !savedRecently;
 
   useEffect(() => {
     // 延迟到渲染后读取，避免同步 setState 触发级联渲染（react-hooks/set-state-in-effect）
@@ -112,15 +143,23 @@ export function TodayView({
     return () => window.clearTimeout(t);
   }, [partnerWasUnread]);
 
+  // P5-O2：满速窗口到点自动过期（回到静止退坡判断）
   useEffect(() => {
+    if (!savedRecently) return;
+    const t = window.setTimeout(() => setSavedRecently(false), STABLE_BOOST_MS);
+    return () => window.clearTimeout(t);
+  }, [savedRecently]);
+
+  // P5-O2：统一心跳（与悄悄话未读检查共用一条定时器；自动刷新已关时只静默不再刷新）
+  useHeartbeat(() => {
     if (!pollEnabled) return;
-    function tick() {
-      if (document.visibilityState !== "visible") return;
-      router.refresh();
-    }
-    const id = window.setInterval(tick, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [pollEnabled, router]);
+    router.refresh();
+  });
+
+  useEffect(() => {
+    setHeartbeatRate(dataStable ? HEARTBEAT_IDLE_MS : HEARTBEAT_MS);
+    return () => setHeartbeatRate(HEARTBEAT_MS);
+  }, [dataStable]);
 
   function togglePoll() {
     setPollEnabled((prev) => {
@@ -137,6 +176,83 @@ export function TodayView({
   function refresh() {
     startTransition(() => router.refresh());
   }
+
+  // P5-O1：状态角标一行（记录徽章 + 异地徽标合并；都无则整行消失）；异地只算一次
+  const distanceLine = longDistanceLine(
+    mine?.city ?? null,
+    yours?.city ?? null,
+    partnerNickname,
+  );
+  const statusLine =
+    [streakBadge?.line, distanceLine].filter(Boolean).join(" · ") || null;
+
+  // P5-O1：提示灯——最多 3 行，优先级 日子临近 > 时光信 > 目标 > 那年今日
+  const hintNodes: { rank: number; node: ReactNode }[] = [];
+  if (dayHint) {
+    hintNodes.push({
+      rank: 1,
+      node: (
+        <Link
+          href="/journal/days"
+          className="block text-[13px] text-ink-secondary hover:text-brand"
+        >
+          {dayHint.label}
+        </Link>
+      ),
+    });
+  }
+  if (letterHint) {
+    hintNodes.push({
+      rank: 2,
+      node: (
+        <Link
+          href="/us/letters"
+          className="block text-[13px] text-ink-secondary hover:text-brand"
+        >
+          ✉ {letterHint.title ? `《${letterHint.title}》` : "有一封信"}
+          将于 {letterHint.unlockDay} 开启
+          {letterHint.daysLeft > 0
+            ? ` · 还有 ${letterHint.daysLeft} 天`
+            : " · 今天开启 ✨"}
+        </Link>
+      ),
+    });
+  }
+  if (goalHint) {
+    hintNodes.push({
+      rank: 3,
+      node: (
+        <Link
+          href="/us/goals"
+          className="block text-[13px] text-ink-secondary hover:text-brand"
+        >
+          🎯 {goalHint.title}
+          {goalHint.totalCount > 0
+            ? ` · ${goalHint.doneCount}/${goalHint.totalCount}`
+            : ""}
+          {goalHint.targetDay && goalHint.daysLeft != null
+            ? ` · 目标日 ${goalHint.targetDay.slice(5)}${dayLeftLine(goalHint.daysLeft, " · ")}`
+            : ""}
+        </Link>
+      ),
+    });
+  }
+  if (onThisDay) {
+    hintNodes.push({
+      rank: 4,
+      node: (
+        <Link
+          href={`/journal/${onThisDay.id}`}
+          className="block text-[13px] text-ink-secondary hover:text-brand"
+        >
+          🗓 {onThisDay.yearsAgo} 年前的今天写过：《
+          {onThisDay.title || onThisDay.bodyPreview}》
+        </Link>
+      ),
+    });
+  }
+  hintNodes.sort((a, b) => a.rank - b.rank);
+  const visibleHints = hintNodes.slice(0, 3);
 
   // P2-N2：抱抱（乐观置灰 + 微动画；失败回滚）
   function giveHug() {
@@ -169,6 +285,8 @@ export function TodayView({
         line: next.line,
         note: next.note,
         imageUrl: next.imageUrl,
+        city: next.city,
+        company: next.company,
       });
       if (!res.ok || !res.checkIn) {
         setError(res.error || "同步失败");
@@ -176,11 +294,11 @@ export function TodayView({
       }
       setMine(res.checkIn);
       setMineKey((k) => k + 1);
+      setSavedRecently(true);
       setSheetOpen(false);
     });
   }
 
-  const syncedCount = Number(Boolean(mine)) + Number(Boolean(yours));
   const anniversaryDays =
     anniversaryDay && !anniversaryDay.startsWith("0000")
       ? daysSinceAnniversary(anniversaryDay)
@@ -204,13 +322,29 @@ export function TodayView({
               disabled={pending}
               className="flex h-10 items-center gap-1.5 rounded-[12px] bg-white/45 px-3 text-[13px] text-ink-secondary hover:bg-white/60"
               aria-label="刷新"
-              title={pollEnabled ? "自动刷新已开" : "自动刷新已关"}
             >
               <RefreshCw
                 className={`size-3.5 ${pending ? "animate-spin" : ""}`}
                 strokeWidth={1.75}
               />
               刷新
+            </button>
+            <button
+              type="button"
+              onClick={togglePoll}
+              title={
+                pollEnabled
+                  ? "自动刷新：开（45s，页面静止时退为 3 分钟）· 点击关闭"
+                  : "自动刷新：已关 · 点击开启"
+              }
+              aria-label={pollEnabled ? "关闭自动刷新" : "开启自动刷新"}
+              className="flex size-10 items-center justify-center rounded-[12px] bg-white/45 text-ink-tertiary hover:bg-white/60"
+            >
+              {pollEnabled ? (
+                <Timer className="size-4" strokeWidth={1.75} />
+              ) : (
+                <TimerOff className="size-4" strokeWidth={1.75} />
+              )}
             </button>
             <Button
               className="h-10 px-4"
@@ -258,30 +392,18 @@ export function TodayView({
 
         <CollabInviteCard invite={collabInvite} myPendingInvite={myPendingInvite} />
 
-        {dayHint ? (
-          <Link
-            href="/journal/days"
-            className="mb-4 block text-[13px] text-ink-secondary hover:text-brand"
-          >
-            {dayHint.label}
-          </Link>
+        {visibleHints.length > 0 ? (
+          <div className="mb-4 space-y-2">
+            {visibleHints.map((h) => (
+              <div key={h.rank}>{h.node}</div>
+            ))}
+          </div>
         ) : null}
 
-        {streakBadge ? (
+        {statusLine ? (
           <p className="mb-4 text-[12px] tracking-[0.02em] text-ink-tertiary">
-            {streakBadge.line}
+            {statusLine}
           </p>
-        ) : null}
-
-        {letterHint ? (
-          <Link
-            href="/us/letters"
-            className="mb-4 block text-[13px] text-ink-secondary hover:text-brand"
-          >
-            ✉ {letterHint.title ? `《${letterHint.title}》` : "有一封信"}
-            将于 {letterHint.unlockDay} 开启
-            {letterHint.daysLeft > 0 ? ` · 还有 ${letterHint.daysLeft} 天` : " · 今天开启 ✨"}
-          </Link>
         ) : null}
 
         <div
@@ -377,26 +499,11 @@ export function TodayView({
           ) : (
             <p className="mt-2 text-[14px] text-ink-secondary">暂无关联日记</p>
           )}
-          {onThisDay ? (
-            <Link
-              href={`/journal/${onThisDay.id}`}
-              className="mt-2 block text-[14px] text-brand hover:underline"
-            >
-              {onThisDay.yearsAgo} 年前的今天写过：《{onThisDay.title || onThisDay.bodyPreview}》
-            </Link>
-          ) : null}
           {onThisDayList ? (
             <p className="mt-2 text-[13px] text-ink-secondary">
               ☑ {onThisDayList.yearsAgo} 年前今天完成了「{onThisDayList.title}」
             </p>
           ) : null}
-          <button
-            type="button"
-            onClick={togglePoll}
-            className="mt-3 text-[12px] text-ink-tertiary hover:text-ink-secondary"
-          >
-            自动刷新：{pollEnabled ? "开（45s）" : "关"}
-          </button>
         </section>
       </Workbench>
 

@@ -1,53 +1,56 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Heart, X } from "lucide-react";
+import { Flame, Heart, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 import { NOTE_BODY_MAX } from "@/lib/note";
 import { createNoteAction } from "@/server/note-actions";
+import { useHeartbeat } from "@/lib/heartbeat";
 
 const UNREAD_KEY = "duet.notes.lastSeen";
-const CHECK_MS = 45_000;
 
 /**
  * P2-N7 悄悄话全局入口：
  * 桌面侧栏底部同位 / 移动端右下（清单 FAB 上方），点击弹轻 Sheet 发送。
- * 未读信号 = 对方在我上次查看悄悄话之后有新留言（基于现有今日页轮询节奏顺带检查，不新增轮询进程）。
+ * 未读信号 = 对方在我上次查看悄悄话之后有新留言（P5-O2：用统一心跳检查，不再自起独立定时器）。
  */
 export function QuickNoteButton({ partnerNickname }: { partnerNickname: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
+  const [burn, setBurn] = useState(false);
   const [unread, setUnread] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentPulse, setSentPulse] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  useEffect(() => {
-    let alive = true;
-    async function check() {
-      if (document.visibilityState !== "visible") return;
-      try {
-        const lastSeen = Number(localStorage.getItem(UNREAD_KEY) || 0);
-        const res = await fetch(
-          `/api/notes/unread?since=${encodeURIComponent(new Date(lastSeen).toISOString())}`,
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as { count: number };
-        if (alive) setUnread(data.count > 0);
-      } catch {
-        /* ignore */
-      }
+  async function check() {
+    if (document.visibilityState !== "visible") return;
+    try {
+      const lastSeen = Number(localStorage.getItem(UNREAD_KEY) || 0);
+      const res = await fetch(
+        `/api/notes/unread?since=${encodeURIComponent(new Date(lastSeen).toISOString())}`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { count: number };
+      setUnread(data.count > 0);
+    } catch {
+      /* ignore */
     }
-    const t = window.setTimeout(check, 0);
-    const id = window.setInterval(check, CHECK_MS);
-    return () => {
-      alive = false;
-      window.clearTimeout(t);
-      window.clearInterval(id);
-    };
+  }
+
+  // P5-O2：未读检查改用统一心跳（模块级一条定时器，今日页上与今日全页刷新共用）
+  const checkRef = useRef(check);
+  useEffect(() => {
+    checkRef.current = check;
+  });
+  useHeartbeat(() => checkRef.current());
+  // 原定时器的首拍改为挂载即查（不等第一拍）
+  useEffect(() => {
+    void checkRef.current();
   }, []);
 
   function openSheet() {
@@ -63,12 +66,13 @@ export function QuickNoteButton({ partnerNickname }: { partnerNickname: string }
   function send() {
     setError(null);
     startTransition(async () => {
-      const res = await createNoteAction({ body });
+      const res = await createNoteAction({ body, burnAfterReading: burn });
       if (!res.ok) {
         setError(res.error || "发送失败");
         return;
       }
       setBody("");
+      setBurn(false);
       setOpen(false);
       setSentPulse(true);
       window.setTimeout(() => setSentPulse(false), 900);
@@ -79,6 +83,8 @@ export function QuickNoteButton({ partnerNickname }: { partnerNickname: string }
   const sheet = open ? <NoteSheetBody
     body={body}
     setBody={setBody}
+    burn={burn}
+    setBurn={setBurn}
     error={error}
     pending={pending}
     onClose={() => setOpen(false)}
@@ -111,6 +117,8 @@ export function QuickNoteButton({ partnerNickname }: { partnerNickname: string }
 function NoteSheetBody({
   body,
   setBody,
+  burn,
+  setBurn,
   error,
   pending,
   onClose,
@@ -118,6 +126,8 @@ function NoteSheetBody({
 }: {
   body: string;
   setBody: (v: string) => void;
+  burn: boolean;
+  setBurn: (fn: (v: boolean) => boolean) => void;
   error: string | null;
   pending: boolean;
   onClose: () => void;
@@ -179,9 +189,27 @@ function NoteSheetBody({
           className="mt-4 w-full resize-none rounded-[14px] border border-line bg-white/45 px-3 py-2.5 text-[14px] outline-none focus:border-brand"
         />
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-[12px] text-ink-tertiary">
-            {body.length}/{NOTE_BODY_MAX}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] text-ink-tertiary">
+              {body.length}/{NOTE_BODY_MAX}
+            </span>
+            {/* P3-T8：阅后即焚开关（与置顶互斥，服务端恻底） */}
+            <button
+              type="button"
+              onClick={() => setBurn((v) => !v)}
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
+                burn
+                  ? "border-signal bg-signal/10 text-signal"
+                  : "border-line text-ink-tertiary hover:text-ink-secondary",
+              )}
+              aria-pressed={burn}
+              title="对方读过后 24 小时自动消失，不进回收站"
+            >
+              <Flame className="size-3.5" strokeWidth={1.75} />
+              阅后即焚
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" className="h-9 px-3" onClick={onClose}>
               取消

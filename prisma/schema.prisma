@@ -33,6 +33,8 @@ model User {
   hugsGiven     CheckInHug[]
   letters       Letter[]
   entrySections EntrySection[]
+  goalsCreated  Goal[]        @relation("GoalsCreated")
+  goalStepsDone GoalStep[]    @relation("GoalStepsDone")
 
   @@map("user")
 }
@@ -99,6 +101,7 @@ model Space {
   listItems ListItem[]
   notes     Note[]
   letters   Letter[]
+  goals     Goal[]
 
   @@map("space")
 }
@@ -127,6 +130,10 @@ model CheckIn {
   /// Asia/Shanghai 自然日 YYYY-MM-DD
   day           String    @db.Char(10)
   mood          String?   @db.VarChar(16) // happy | ok | sad
+  /// P3-T7 情绪流地图：今天在（城市，手选不定位）
+  city          String?   @db.VarChar(40)
+  /// P3-T7 情绪流地图：和谁在一起（ta | family | friends | colleagues | alone）
+  company       String?   @db.VarChar(16)
   line          String    @db.VarChar(60)
   note          String?   @db.VarChar(200)
   imageUrl      String?   @db.VarChar(512)
@@ -266,12 +273,20 @@ model Note {
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   parent    Note?    @relation("NoteReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Note[]   @relation("NoteReplies")
+  /// P3-T8：焚毁由父条 timeout 独立计时；子回复不随父物理级联（见 Goal 归属说明）
   /// P2-N5：软删除时间（null = 正常；30 天后物理清理）
   deletedAt DateTime?
+  /// P3-T8 阅后即焚：发送时开启的焚毁标记
+  burn     Boolean  @default(false)
+  /// P3-T8 阅后即焚：对方已读时间（计时锚点）
+  readAt   DateTime?
+  /// P3-T8 阅后即焚：焚毁时刻（对方已读 + 24h；到点物理删除，不进回收站）
+  expiresAt DateTime?
 
   @@index([spaceId, createdAt])
   @@index([parentId])
   @@index([spaceId, deletedAt])
+  @@index([expiresAt])
   @@map("note")
 }
 
@@ -368,6 +383,46 @@ model AppLock {
 }
 
 /// 客户端/服务端错误上报（P0-3，30 天自动清理）
+/// P3-T11 共同目标：正在一起推进的事（区别于清单的「想做的事」）
+model Goal {
+  id         String    @id @default(cuid())
+  spaceId    String
+  creatorId  String
+  title      String    @db.VarChar(40)
+  note       String?   @db.VarChar(200)
+  /// 可选目标日 YYYY-MM-DD
+  targetDay  String?   @db.Char(10)
+  /// open | done（全部步骤完成后自动转 done）
+  status     String    @default("open") @db.VarChar(8)
+  completedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  space      Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  creator    User      @relation("GoalsCreated", fields: [creatorId], references: [id], onDelete: Cascade)
+  steps      GoalStep[]
+
+  @@index([spaceId, status])
+  @@map("goal")
+}
+
+/// P3-T11 目标步骤：双方各自可勾，勾选记录完成者（双人双色）
+model GoalStep {
+  id       String    @id @default(cuid())
+  goalId   String
+  goal     Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title    String    @db.VarChar(60)
+  /// 完成者 userId（null = 未完成）；双人双色对勾
+  doneById String?
+  doneBy   User?     @relation("GoalStepsDone", fields: [doneById], references: [id], onDelete: SetNull)
+  doneAt   DateTime?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([goalId, sortOrder])
+  @@map("goal_step")
+}
+
 model ErrorLog {
   id        String   @id @default(cuid())
   userId    String?

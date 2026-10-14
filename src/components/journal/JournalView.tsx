@@ -36,6 +36,8 @@ type JournalViewProps = {
   onThisDay?: OnThisDayItem[];
   /** P3-T3：历史同日完成的清单项（仅首屏传入） */
   onThisDayLists?: OnThisDayListItem[];
+  /** P3-T6：对方「正在写」占位条（不可点开、无内容） */
+  writingHint?: { day: string; authorNickname: string } | null;
 };
 
 const FILTERS: { id: TimelineFilter; label: string }[] = [
@@ -58,6 +60,7 @@ export function JournalView({
   initialQuery = "",
   onThisDay = [],
   onThisDayLists = [],
+  writingHint = null,
 }: JournalViewProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<TimelineFilter>(initialFilter);
@@ -189,6 +192,15 @@ export function JournalView({
           </div>
         }
       >
+        {/* P3-T6：对方「正在写」占位条——不可点开、无内容，发布后自动消失 */}
+        {writingHint ? (
+          <p className="mb-4 flex items-center gap-2 text-[13px] text-ink-tertiary">
+            <span className="animate-pulse">✍️</span>
+            {writingHint.authorNickname} 正在写一篇{" "}
+            {formatDayShort(writingHint.day)} 的日记……
+          </p>
+        ) : null}
+
         {onThisDay.length > 0 && items.length > 0 && filter === "all" && !query.trim() ? (
           <section className="mb-8">
             <h2 className="mb-3 font-display text-[20px] text-ink-secondary">
@@ -274,7 +286,28 @@ export function JournalView({
                 </h2>
                 <ul className="divide-y divide-line border-y border-line">
                   {items.map((item) =>
-                    item.kind === "entry" ? (
+                    item.kind === "goal" ? (
+                      <li
+                        key={item.id}
+                        className="flex items-center gap-2 py-3.5 text-[14px]"
+                      >
+                        <span className="shrink-0 text-[13px] text-ink-tertiary">
+                          {formatDayShort(item.day)}
+                        </span>
+                        <span className="rounded-full border border-[var(--signal)]/35 bg-[var(--signal)]/10 px-2.5 py-0.5 text-[12px] font-medium text-[var(--signal)]">
+                          🎉 一起完成了
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium text-ink">
+                          「{item.title}」
+                        </span>
+                        <Link
+                          href="/us/goals"
+                          className="shrink-0 text-[12px] text-brand"
+                        >
+                          目标 →
+                        </Link>
+                      </li>
+                    ) : item.kind === "entry" ? (
                       <li key={item.id}>
                         <Link
                           href={`/journal/${item.id}`}

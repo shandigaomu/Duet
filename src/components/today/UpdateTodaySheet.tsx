@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { cn } from "@/lib/cn";
 import { ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { MoodPicker } from "@/components/today/MoodPicker";
 import {
+  CITY_POOL,
+  COMPANIES,
   LINE_MAX,
   NOTE_MAX,
   type CheckIn,
+  type CompanyId,
   type MoodId,
 } from "@/lib/checkin";
 import { uploadImageFile } from "@/lib/upload-client";
@@ -47,6 +51,11 @@ type SheetBodyProps = {
   saving: boolean;
 };
 
+const cnInput =
+  "h-9 rounded-[10px] border border-white/50 bg-white/55 px-3 text-[13px] text-ink outline-none transition-colors hover:bg-white/70 focus:border-brand";
+const cnCo =
+  "rounded-[10px] bg-white/45 px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-white/70 hover:text-ink";
+
 function SheetBody({ initial, onClose, onSave, saving }: SheetBodyProps) {
   const titleId = useId();
   const lineRef = useRef<HTMLInputElement>(null);
@@ -55,6 +64,12 @@ function SheetBody({ initial, onClose, onSave, saving }: SheetBodyProps) {
   const [note, setNote] = useState(initial?.note ?? "");
   const [imageUrl, setImageUrl] = useState<string | null>(
     initial?.imageUrl ?? null,
+  );
+  // P3-T7：情绪流地图（两可选字段，「和 TA」高亮但不预选）
+  const [city, setCity] = useState(initial?.city ?? "");
+  const [cityOpen, setCityOpen] = useState(false);
+  const [company, setCompany] = useState<CompanyId | null>(
+    initial?.company ?? null,
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +147,8 @@ function SheetBody({ initial, onClose, onSave, saving }: SheetBodyProps) {
       line: trimmed,
       note: note.trim(),
       imageUrl: finalUrl,
+      city: city.trim() || null,
+      company,
       updatedAt: new Date().toISOString(),
       partnerReadAt: null,
     });
@@ -272,6 +289,74 @@ function SheetBody({ initial, onClose, onSave, saving }: SheetBodyProps) {
                   />
                 </label>
               )}
+            </section>
+
+            {/* P3-T7：今天在 + 和谁在一起 */}
+            <section className="glass-toolbar px-4 py-3.5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-medium tracking-[0.04em] text-ink-secondary">
+                  今天在 / 和谁在一起 · 可选
+                </p>
+                <span className="text-[11px] text-ink-tertiary">不填不显示</span>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCityOpen((o) => !o)}
+                  className={cnInput}
+                  aria-expanded={cityOpen}
+                >
+                  📍 {city.trim() || "选个城市"}
+                </button>
+              </div>
+              {cityOpen ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {city.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => setCity("")}
+                      className="rounded-[10px] border border-line bg-white/45 px-2.5 py-1 text-[12px] text-ink-tertiary hover:border-danger hover:text-danger"
+                    >
+                      清除
+                    </button>
+                  ) : null}
+                  {CITY_POOL.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setCity(c);
+                        setCityOpen(false);
+                      }}
+                      className={
+                        city === c
+                          ? "rounded-[10px] bg-brand px-2.5 py-1 text-[12px] text-[#F5F6F4]"
+                          : "rounded-[10px] bg-white/45 px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-white/70 hover:text-ink"
+                      }
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {COMPANIES.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() =>
+                      setCompany((prev) => (prev === c.id ? null : c.id))
+                    }
+                    className={
+                      company === c.id
+                        ? "bg-brand rounded-[10px] px-2.5 py-1 text-[12px] text-[#F5F6F4]"
+                        : cnCo
+                    }
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
             </section>
 
             {error ? (

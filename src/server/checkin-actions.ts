@@ -5,8 +5,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
 import { shanghaiDay } from "@/lib/space";
-import type { CheckIn, MoodId } from "@/lib/checkin";
-import { LINE_MAX, NOTE_MAX, recentWeekStarts, streakBadge } from "@/lib/checkin";
+import type { CheckIn, CompanyId, MoodId } from "@/lib/checkin";
+import {
+  COMPANIES,
+  CITY_MAX,
+  LINE_MAX,
+  NOTE_MAX,
+  recentWeekStarts,
+  streakBadge,
+} from "@/lib/checkin";
 import { shanghaiWeekStart } from "@/lib/journal";
 import { sendEventEmail } from "@/server/mail";
 import {
@@ -20,6 +27,8 @@ function toClientCheckIn(row: {
   line: string;
   note: string | null;
   imageUrl: string | null;
+  city: string | null;
+  company: string | null;
   updatedAt: Date;
   partnerReadAt: Date | null;
 }): CheckIn {
@@ -28,6 +37,8 @@ function toClientCheckIn(row: {
     line: row.line,
     note: row.note ?? "",
     imageUrl: row.imageUrl,
+    city: row.city,
+    company: (row.company as CompanyId | null) ?? null,
     updatedAt: row.updatedAt.toISOString(),
     partnerReadAt: row.partnerReadAt?.toISOString() ?? null,
   };
@@ -41,6 +52,18 @@ export async function loadTodayCheckIns() {
 
   const rows = await prisma.checkIn.findMany({
     where: { spaceId, day },
+    select: {
+      id: true,
+      authorId: true,
+      mood: true,
+      line: true,
+      note: true,
+      imageUrl: true,
+      city: true,
+      company: true,
+      partnerReadAt: true,
+      updatedAt: true,
+    },
   });
 
   const mineRow = rows.find((r) => r.authorId === user.id) ?? null;
@@ -151,6 +174,11 @@ const saveSchema = z.object({
   line: z.string().trim().min(1, "请写一句今天").max(LINE_MAX),
   note: z.string().trim().max(NOTE_MAX).optional().default(""),
   imageUrl: z.string().nullable().optional(),
+  city: z.string().trim().max(CITY_MAX).nullable().optional(),
+  company: z
+    .enum(COMPANIES.map((c) => c.id) as unknown as [CompanyId, ...CompanyId[]])
+    .nullable()
+    .optional(),
 });
 
 export type SaveCheckInResult = {
@@ -164,6 +192,8 @@ export async function saveTodayCheckInAction(input: {
   line: string;
   note: string;
   imageUrl: string | null;
+  city?: string | null;
+  company?: CompanyId | null;
 }): Promise<SaveCheckInResult> {
   const { user, membership } = await requirePaired();
   const day = shanghaiDay();
@@ -183,6 +213,9 @@ export async function saveTodayCheckInAction(input: {
     line: input.line,
     note: input.note,
     imageUrl,
+    // 不在池内/空串 → 归 null（可选字段，不填不显示任何占位）
+    city: input.city?.trim() || null,
+    company: input.company ?? null,
   });
   if (!parsed.success) {
     return {
@@ -207,6 +240,8 @@ export async function saveTodayCheckInAction(input: {
       line: parsed.data.line,
       note: parsed.data.note || null,
       imageUrl: parsed.data.imageUrl,
+      city: parsed.data.city,
+      company: parsed.data.company,
       partnerReadAt: null,
     },
     update: {
@@ -214,6 +249,8 @@ export async function saveTodayCheckInAction(input: {
       line: parsed.data.line,
       note: parsed.data.note || null,
       imageUrl: parsed.data.imageUrl,
+      city: parsed.data.city,
+      company: parsed.data.company,
       // 覆盖更新后对方需重新已读
       partnerReadAt: null,
     },

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
+import { prisma as prismaClient } from "@/lib/db";
 import { shanghaiDay } from "@/lib/space";
 import { sendEventEmail } from "@/server/mail";
 import {
@@ -69,6 +70,16 @@ export async function inviteCollabAction(input: {
 
   revalidatePath("/today");
   revalidatePath("/journal");
+
+  // P3-T6：合写邀请发出即替换同日「正在写」占位
+  await prismaClient.entry.deleteMany({
+    where: {
+      spaceId: ctx.membership.spaceId,
+      authorId: ctx.user.id,
+      day: input.day,
+      visibility: "writing",
+    },
+  });
 
   // P3-T1：邀请发出 → 通知对方（推送 + 可选邮件）
   pushToPartner(

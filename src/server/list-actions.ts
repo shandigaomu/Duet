@@ -77,26 +77,44 @@ export async function loadUsOverview(): Promise<{
   photoCount: number;
   noteCount: number;
   letterCount: number;
+  /** P3-T11：进行中目标数 */
+  activeGoalCount: number;
+  /** P4-W10：对方留在我日记上的回应数（回应墙） */
+  reactionCount: number;
 }> {
   const ctx = await requirePaired();
   const spaceId = ctx.membership.spaceId;
   const userId = ctx.user.id;
-  const [openListCount, photoCount, noteCount, letterCount] = await Promise.all([
-    prisma.listItem.count({ where: { spaceId, status: "open" } }),
-    prisma.entryImage.count({
-      where: {
-        entry: {
-          spaceId,
-          OR: [{ visibility: "shared" }, { authorId: userId }],
+  const now = new Date();
+  const [openListCount, photoCount, noteCount, letterCount, activeGoalCount, reactionCount] =
+    await Promise.all([
+      prisma.listItem.count({ where: { spaceId, status: "open" } }),
+      prisma.entryImage.count({
+        where: {
+          entry: {
+            spaceId,
+            OR: [{ visibility: "shared" }, { authorId: userId }],
+          },
         },
-      },
-    }),
-    prisma.note.count({
-      where: { spaceId, parentId: null, deletedAt: null },
-    }),
-    prisma.letter.count({ where: { spaceId } }),
-  ]);
-  return { openListCount, photoCount, noteCount, letterCount };
+      }),
+      // P3-T8：阅后即焚到点的信不计数（渲染侧双保险同条件）
+      prisma.note.count({
+        where: {
+          spaceId,
+          parentId: null,
+          deletedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      }),
+      prisma.letter.count({ where: { spaceId } }),
+      // P3-T11
+      prisma.goal.count({ where: { spaceId, status: "open" } }),
+      // P4-W10：对方给我日记写的回应（作者不可回应自己 → 天然只含对方）；软删日记不算
+      prisma.entryReaction.count({
+        where: { entry: { spaceId, authorId: userId, deletedAt: null } },
+      }),
+    ]);
+  return { openListCount, photoCount, noteCount, letterCount, activeGoalCount, reactionCount };
 }
 
 export async function createListItemAction(input: {

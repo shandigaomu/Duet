@@ -5,10 +5,70 @@ export type CheckIn = {
   line: string;
   note: string;
   imageUrl: string | null;
+  /** P3-T7：今天在（城市，手选不定位；空 = 不展示） */
+  city: string | null;
+  /** P3-T7：和谁在一起（id；空 = 不展示） */
+  company: CompanyId | null;
   updatedAt: string; // ISO
   /** 对方是否已读「我」的内容；仅 me 侧有意义 */
   partnerReadAt: string | null;
 };
+
+// —— P3-T7 情绪流地图 ——
+
+export type CompanyId = "ta" | "family" | "friends" | "colleagues" | "alone";
+
+/** 「和谁在一起」选项（「和 TA」默认高亮但不预选） */
+export const COMPANIES = [
+  { id: "ta", label: "和 TA" },
+  { id: "family", label: "家人" },
+  { id: "friends", label: "朋友" },
+  { id: "colleagues", label: "同事" },
+  { id: "alone", label: "自己" },
+] as const satisfies ReadonlyArray<{ id: CompanyId; label: string }>;
+
+export function companyLabel(id: string | null | undefined) {
+  if (!id) return null;
+  return COMPANIES.find((c) => c.id === id)?.label ?? null;
+}
+
+/** 常用城市下拉池（纯手选，不定位不推导；同 TimeZonePicker 思路的城市池） */
+export const CITY_POOL = [
+  "北京",
+  "上海",
+  "广州",
+  "深圳",
+  "杭州",
+  "成都",
+  "重庆",
+  "武汉",
+  "西安",
+  "南京",
+  "长沙",
+  "厦门",
+  "青岛",
+  "哈尔滨",
+  "乌鲁木齐",
+  "拉萨",
+  "香港",
+  "澳门",
+  "台北",
+  "国外·其他",
+];
+
+export const CITY_MAX = 40;
+
+/** P3-T7：今日卡角落徽标「📍 上海 · 和 TA」（不填不显示） */
+export function cityCompanyBadge(
+  city: string | null,
+  company: CompanyId | null,
+): string | null {
+  const c = city?.trim() || null;
+  const co = companyLabel(company);
+  if (!c && !co) return null;
+  if (c && co) return `📍 ${c} · ${co}`;
+  return c ? `📍 ${c}` : `📍 ${co}`;
+}
 
 export const MOODS = [
   { id: "happy", label: "开心", emoji: "😄" },
@@ -220,4 +280,21 @@ export function streakBadge(input: StreakBadgeInput): StreakBadge {
   }
 
   return null;
+}
+
+// —— P4-W3 异地徽标（纯陈述，不填/同城安静消失） ——
+
+/**
+ * 双方今日都填了城市且不同 →「🌏 异地中 · 我在上海 · {TA} 在东京」。
+ * partnerLabel 由调用方传（昵称），城市 trim 后比较；其余情况 null（安静消失）。
+ */
+export function longDistanceLine(
+  mineCity: string | null,
+  yourCity: string | null,
+  partnerLabel = "TA",
+): string | null {
+  const mine = mineCity?.trim() || null;
+  const yours = yourCity?.trim() || null;
+  if (!mine || !yours || mine === yours) return null;
+  return `🌏 异地中 · 我在${mine} · ${partnerLabel}在${yours}`;
 }

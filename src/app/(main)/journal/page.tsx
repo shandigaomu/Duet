@@ -41,6 +41,7 @@ export default async function JournalPage({ searchParams }: Props) {
       initialQuery={data.q}
       onThisDay={data.onThisDay}
       onThisDayLists={data.onThisDayLists}
+      writingHint={data.writingHint}
     />
   );
 }

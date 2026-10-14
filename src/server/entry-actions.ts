@@ -20,6 +20,7 @@ import {
   type CheckInSnapshotItem,
   type EntryDTO,
   type EntryListItem,
+  type GoalDoneItem,
   type OnThisDayItem,
   type OnThisDayListItem,
   type TimelineFilter,
@@ -27,14 +28,13 @@ import {
   type TimelineStats,
 } from "@/lib/journal";
 import { shanghaiDay } from "@/lib/space";
+import { entryVisibleWhere, partnerOf } from "@/lib/entry-shared";
 import { sendEventEmail } from "@/server/mail";
 import { pushEntryCreated, pushToPartner } from "@/server/push";
 
 type MembershipCtx = Awaited<ReturnType<typeof requirePaired>>;
 
-function partnerOf(ctx: MembershipCtx) {
-  return ctx.membership.space.members.find((m) => m.userId !== ctx.user.id);
-}
+/** 已移至 @/lib/entry-shared（"use server" 不能导出同步函数）；保留 import 别名供内部使用 */
 
 function sideOf(
   authorId: string,
@@ -107,14 +107,9 @@ function toEntryDTO(
 /**
  * 可见性 + 未删除 + 未在合写 pending（P2-N5/N8：单一封装点，所有查询都走这里防漏）。
  * pending 合写仅出现在今日页邀请卡，不进时间线/相册/统计。
+ * P3-T6：writing（正在写占位）档任何人都不进常规可见性——占位条单独查询。
+ * 实现在 @/lib/entry-shared（"use server" 不能导出同步函数）。
  */
-function entryVisibleWhere(userId: string) {
-  return {
-    OR: [{ visibility: "shared" }, { authorId: userId }],
-    deletedAt: null,
-    collabStatus: { not: "pending" },
-  };
-}
 
 function currentYear() {
   return shanghaiDay().slice(0, 4);
@@ -181,6 +176,8 @@ export async function loadTimeline(opts?: {
   onThisDay: OnThisDayItem[];
   /** P3-T3：历史同日完成的清单项（仅首屏返回） */
   onThisDayLists: OnThisDayListItem[];
+  /** P3-T6：对方「正在写」占位条（仅首屏；纯 day/author 投影，不携带标题正文） */
+  writingHint: { day: string; authorNickname: string } | null;
 }> {
   const ctx = await requirePaired();
   const filter = opts?.filter ?? "all";
@@ -241,8 +238,10 @@ export async function loadTimeline(opts?: {
     ...(cursor ? { day: { lt: cursor } } : {}),
   };
 
-  const [entryRows, checkInRows, total, mine, yours, monthCount, onThisDayRows, onThisDayListRows] =
-    await Promise.all([
+  const [entryRows, checkInRows, total, mine, yours, monthCount, onThisDayRows,  onThisDayListRows,
+  // P3-T6：对方正在写的占位条（仅首屏查询；不取标题正文，纯 day/author 投影）
+  partnerWritingRow,
+  goalDoneRows] = await Promise.all([
       prisma.entry.findMany({
         where: entryWhere,
         include: { images: true, reads: true, reactions: true },
@@ -283,8 +282,8 @@ export async function loadTimeline(opts?: {
           ],
         },
       }),
-      // P1-1：历史同日日记（仅首屏查询；分页页不再重复带）
-      cursor
+      // P1-1：历史同日日记（仅首屏查询；分页页/搜索态不再带——搜索结果与历史同日无关）
+      cursor || q
         ? Promise.resolve([])
         : prisma.entry.findMany({
             where: {
@@ -298,8 +297,8 @@ export async function loadTimeline(opts?: {
             orderBy: { day: "desc" },
             take: 30,
           }),
-      // P3-T3：历史同月日完成的清单项（仅首屏查询）
-      cursor
+      // P3-T3：历史同月日完成的清单项（仅首屏查询；搜索态同上）
+      cursor || q
         ? Promise.resolve([])
         : prisma.listItem.findMany({
             where: {
@@ -321,6 +320,34 @@ export async function loadTimeline(opts?: {
             orderBy: { completedAt: "desc" },
             take: 60,
           }),
+      cursor || q
+        ? Promise.resolve(null)
+        : prisma.entry.findFirst({
+            where: {
+              spaceId,
+              visibility: "writing",
+              authorId: { not: ctx.user.id },
+              deletedAt: null,
+            },
+            select: { day: true },
+          }),
+      // P3-T11：达成目标并入时间线（近 10 年窗口，内存按筛选/游标过滤；搜索态不带——
+      // 目标标题不参与文本搜索，混进结果只会稀释真命中，P5-O3）
+      q
+        ? Promise.resolve([])
+        : prisma.goal.findMany({
+        where: {
+          spaceId,
+          status: "done",
+          completedAt: {
+            not: null,
+            gte: new Date(`${Number(currentYear()) - 10}-01-01T00:00:00+08:00`),
+          },
+        },
+        select: { id: true, title: true, completedAt: true },
+        orderBy: { completedAt: "desc" },
+        take: 60,
+      }),
     ]);
 
   const stats: TimelineStats = { total, mine, yours, month: monthCount };
@@ -379,11 +406,36 @@ export async function loadTimeline(opts?: {
     }),
   );
 
-  const sorted: TimelineItem[] = [...entryItems, ...checkInItems].sort(
+  // P3-T11：达成目标特殊行（completedAt → 上海日；与筛选/游标同口径过滤）
+  const goalItems: GoalDoneItem[] = goalDoneRows
+    .map((g) => ({
+      kind: "goal" as const,
+      id: g.id,
+      day: (g.completedAt as Date).toISOString().slice(0, 10),
+      title: g.title,
+    }))
+    .filter((g) => {
+      if (filterDay) {
+        if ("gte" in filterDay && g.day < (filterDay.gte as string)) return false;
+        if ("lte" in filterDay && g.day > (filterDay.lte as string)) return false;
+        if ("startsWith" in filterDay && !g.day.startsWith(filterDay.startsWith as string))
+          return false;
+      }
+      if (cursor && g.day >= cursor) return false;
+      return true;
+    });
+
+  const sorted: TimelineItem[] = [
+    ...entryItems,
+    ...checkInItems,
+    ...goalItems,    ].sort(
     (a, b) => {
       if (a.day !== b.day) return b.day.localeCompare(a.day);
-      // 同日：日记在前，同步细条在后
-      if (a.kind !== b.kind) return a.kind === "entry" ? -1 : 1;
+      // 同日：日记 → 目标达成行 → 同步细条
+      if (a.kind !== b.kind) {
+        const w = { entry: 0, goal: 1, checkin: 2 } as const;
+        return w[a.kind] - w[b.kind];
+      }
       if (a.kind === "entry" && b.kind === "entry") {
         return b.createdAt.localeCompare(a.createdAt);
       }
@@ -424,6 +476,13 @@ export async function loadTimeline(opts?: {
       shanghaiDay(),
       2,
     ),
+    // P3-T6：占位条（null = 只有作者自己看得见自己的「正在写」
+    writingHint: partnerWritingRow
+      ? {
+          day: partnerWritingRow.day,
+          authorNickname: partner?.nickname ?? "你",
+        }
+      : null,
   };
 }
 
@@ -506,6 +565,77 @@ export async function countEntriesForDay(day?: string) {
   return { day: target, count };
 }
 
+// P3-T6：隐私可见性「正在进行」 —— 占位条行为
+// 红线：对方占位条不携带标题/正文任何字符；服务器只存 day/author；发布/撤销即时生效。
+
+export async function loadMyWritingStateAction(): Promise<{ days: string[] }> {
+  const ctx = await requirePaired();
+  const rows = await prisma.entry.findMany({
+    where: {
+      spaceId: ctx.membership.spaceId,
+      authorId: ctx.user.id,
+      visibility: "writing",
+      deletedAt: null,
+    },
+    select: { day: true },
+    orderBy: { day: "asc" },
+  });
+  return { days: rows.map((r) => r.day) };
+}
+
+/** 开关「让 TA 知道我正在写」：on = 落一条空占位（无标题无正文）；off = 撤销 */
+export async function setWritingPlaceholderAction(input: {
+  day: string;
+  on: boolean;
+}): Promise<{ ok: boolean }> {
+  const ctx = await requirePaired();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.day)) return { ok: false };
+  const where = {
+    spaceId: ctx.membership.spaceId,
+    authorId: ctx.user.id,
+    day: input.day,
+    visibility: "writing",
+  };
+  if (!input.on) {
+    await prisma.entry.deleteMany({ where });
+    revalidatePath("/journal");
+    revalidatePath("/today");
+    return { ok: true };
+  }
+  // 幂等 upsert：已存在则不动（不更新任何内容字段）
+  const existing = await prisma.entry.findFirst({ where });
+  if (!existing) {
+    await prisma.entry.create({
+      data: {
+        spaceId: ctx.membership.spaceId,
+        authorId: ctx.user.id,
+        day: input.day,
+        title: null,
+        body: "",
+        visibility: "writing",
+      },
+    });
+  }
+  revalidatePath("/journal");
+  revalidatePath("/today");
+  return { ok: true };
+}
+
+/** 发布（或发起合写）后原子清理作者同日占位——占位条替换为正式条目（内部 helper，不作为 Action 面暴露） */
+async function clearWritingPlaceholders(
+  ctx: { user: { id: string }; membership: { spaceId: string } },
+  day: string,
+) {
+  await prisma.entry.deleteMany({
+    where: {
+      spaceId: ctx.membership.spaceId,
+      authorId: ctx.user.id,
+      day,
+      visibility: "writing",
+    },
+  });
+}
+
 export async function createEntryAction(input: {
   day: string;
   title?: string | null;
@@ -552,6 +682,9 @@ export async function createEntryAction(input: {
   revalidatePath("/today");
   revalidatePath("/us");
   revalidatePath("/us/album");
+
+  // P3-T6：发布即替换同日占位条
+  await clearWritingPlaceholders(ctx, parsed.data.day);
 
   // V3-N1：新日记（含私密）→ 通知对方；私密标题不外泄，文案降级
   const partner = ctx.membership.space.members.find(

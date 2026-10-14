@@ -20,6 +20,8 @@ import { uploadImageFile } from "@/lib/upload-client";
 import { inviteCollabAction } from "@/server/collab-actions";
 import {
   createEntryAction,
+  loadMyWritingStateAction,
+  setWritingPlaceholderAction,
   updateEntryAction,
 } from "@/server/entry-actions";
 
@@ -65,6 +67,31 @@ export function EntryForm({
   const hydrated = useRef(false);
   // P2-N8：邀请 TA 合写
   const [collab, setCollab] = useState(false);
+  // P3-T6：让 TA 知道我正在写（占位条状态）
+  const [writingDays, setWritingDays] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    const t = window.setTimeout(() => {
+      void loadMyWritingStateAction().then((res) => {
+        setWritingDays(new Set(res.days));
+      });
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [mode]);
+
+  // 占位条不携带任何内容，只是 day+author 的事务性投影
+  function toggleWriting() {
+    if (pending || !day) return;
+    const on = !writingDays.has(day);
+    setWritingDays((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(day);
+      else next.delete(day);
+      return next;
+    });
+    void setWritingPlaceholderAction({ day, on });
+  }
 
   useEffect(() => {
     if (mode !== "create" || !draftOwner || hydrated.current) return;
@@ -422,7 +449,27 @@ export function EntryForm({
                 ✍️ 邀请 TA 合写
               </button>
             ) : null}
+            {mode === "create" ? (
+              <button
+                type="button"
+                onClick={toggleWriting}
+                className={`rounded-[10px] px-3 py-1.5 text-[13px] ${
+                  writingDays.has(day)
+                    ? "bg-brand text-white"
+                    : "bg-white/45 text-ink-secondary"
+                }`}
+                title="对方时间线出现一条「TA 正在写」占位条；发布后自动替换，对方看不到任何内容"
+              >
+                ✍️ 让 TA 知道我正在写
+              </button>
+            ) : null}
           </div>
+          {writingDays.has(day) && mode === "create" ? (
+            <p className="mt-2 text-[12px] text-ink-tertiary">
+              对方时间线将出现一条不可点开的「正在写」占位——不会看到标题、正文或图片；
+              发布正式日记 / 发起合写后自动替换，再次点击可撤销。
+            </p>
+          ) : null}
           {collab ? (
             <p className="mt-2 text-[12px] text-ink-tertiary">
               发布后进入 pending：对方在今日页写 TA 的段落，双方确认后合成一篇署名「我 + 你」的日记；

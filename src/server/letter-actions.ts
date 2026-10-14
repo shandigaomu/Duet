@@ -3,18 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
-import { letterSchema, toLetterDTO, type LetterDTO } from "@/lib/letter";
+import {
+  letterSchema,
+  toLetterDTO,
+  type LetterDTO,
+} from "@/lib/letter";
 import { shanghaiDay } from "@/lib/space";
-import { pushLetterUnlocked, pushToPartner } from "@/server/push";
+import { notifyLettersTouch } from "@/server/letter-notify";
 
 type MembershipCtx = Awaited<ReturnType<typeof requirePaired>>;
 
 function partnerOf(ctx: MembershipCtx) {
   return ctx.membership.space.members.find((m) => m.userId !== ctx.user.id);
 }
-
-/** 解锁当天首次被看到时顺带通知对方（无 cron，靠访问触发，每进程每信一次） */
-const unlockNotified = new Set<string>();
 
 export async function loadLetters(): Promise<{
   today: string;
@@ -32,16 +33,13 @@ export async function loadLetters(): Promise<{
     toLetterDTO(r, { viewerId: ctx.user.id, today }),
   );
 
-  for (const letter of letters) {
-    if (letter.state !== "unlocking") continue;
-    if (unlockNotified.has(letter.id)) continue;
-    unlockNotified.add(letter.id);
-    pushToPartner(
-      partner?.userId,
-      ctx.user.id,
-      pushLetterUnlocked(letter.title),
-    );
-  }
+  // P5-O4：解锁当天 / 前夜两条访问触发提醒（去重、文案都在 letter-notify 内）
+  notifyLettersTouch({
+    rows,
+    today,
+    viewerId: ctx.user.id,
+    partnerId: partner?.userId ?? null,
+  });
 
   return {
     today,

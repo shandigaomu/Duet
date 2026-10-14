@@ -13,7 +13,8 @@ export type PushEventKind =
   | "list" // 清单完成
   | "hug" // 被抱抱
   | "letter" // 时光信解锁
-  | "collab"; // P3-T1 合写（邀请/交稿/成稿）
+  | "collab" // P3-T1 合写（邀请/交稿/成稿）
+  | "goal"; // P3-T11 共同目标进展/达成
 
 export type PushPayload = {
   title: string;
@@ -190,6 +191,16 @@ export function pushLetterUnlocked(title: string | null) {
   };
 }
 
+/** P4-W2：前夜提醒（不泄露标题与正文） */
+export function pushLetterDayBefore() {
+  return {
+    title: "时光信",
+    body: "明天，会有一封信开启 ✨",
+    url: "/us/letters",
+    tag: "letter" as const,
+  };
+}
+
 // —— P3-T1 合写通知（邀请/交稿/成稿三时刻） ——
 
 export function pushCollabInvited(
@@ -222,5 +233,25 @@ export function pushCollabPublished(title: string | null) {
     body: title ? `《${title}》合写完成了` : "你们的合写日记完成了",
     url: "/journal",
     tag: "collab" as const,
+  };
+}
+
+// —— P3-T11 共同目标（进展/达成两时刻） ——
+
+export function pushGoalStepDone(nickname: string, stepTitle: string) {
+  return {
+    title: "目标有进展",
+    body: `${nickname} 勾掉了「${stepTitle}」`,
+    url: "/us/goals",
+    tag: "goal" as const,
+  };
+}
+
+export function pushGoalCompleted(title: string) {
+  return {
+    title: "目标达成 🎉",
+    body: `你们一起完成了「${title}」`,
+    url: "/us/goals",
+    tag: "goal" as const,
   };
 }

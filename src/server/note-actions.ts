@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requirePaired } from "@/lib/guards";
-import { noteSchema, type NoteDTO } from "@/lib/note";
+import {
+  BURN_AFTER_READ_MS,
+  noteSchema,
+  type NoteDTO,
+} from "@/lib/note";
 
 type MembershipCtx = Awaited<ReturnType<typeof requirePaired>>;
 
@@ -19,6 +23,9 @@ function toDTO(
     pinned: boolean;
     authorId: string;
     createdAt: Date;
+    burn: boolean;
+    readAt: Date | null;
+    expiresAt: Date | null;
     replies?: {
       id: string;
       body: string;
@@ -26,6 +33,9 @@ function toDTO(
       pinned: boolean;
       authorId: string;
       createdAt: Date;
+      readAt: Date | null;
+      expiresAt: Date | null;
+      burn: boolean;
     }[];
   },
   ctx: MembershipCtx,
@@ -44,6 +54,9 @@ function toDTO(
     authorSide: row.authorId === ctx.user.id ? "me" : "you",
     authorNickname: nick(row.authorId),
     createdAt: row.createdAt.toISOString(),
+    burn: row.burn,
+    readAt: row.readAt?.toISOString() ?? null,
+    burnAt: row.expiresAt?.toISOString() ?? null,
     replies: (row.replies ?? [])
       .slice()
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -56,6 +69,9 @@ function toDTO(
         authorSide: (r.authorId === ctx.user.id ? "me" : "you") as "me" | "you",
         authorNickname: nick(r.authorId),
         createdAt: r.createdAt.toISOString(),
+        burn: r.burn,
+        readAt: r.readAt?.toISOString() ?? null,
+        burnAt: r.expiresAt?.toISOString() ?? null,
         replies: [],
       })),
   };
@@ -67,11 +83,36 @@ export async function loadNotes(): Promise<{
   partnerNickname: string;
 }> {
   const ctx = await requirePaired();
+  const spaceId = ctx.membership.spaceId;
+  const now = new Date();
+
+  // P3-T8：到点即焚（物理删除，不进回收站——趁每次打开顺带清理）
+  await prisma.note.deleteMany({
+    where: { spaceId, expiresAt: { lte: now } },
+  });
+  // P3-T8：阅后即焚计时锚点——打开页者 = 「读者」，只为非本人所发的焚毁信首读计时
+  // （双方各自打开页面时各自触发；reader 读到的作者本人的信同样会被对方侧落表）
+  await prisma.note.updateMany({
+    where: {
+      spaceId,
+      burn: true,
+      authorId: { not: ctx.user.id },
+      readAt: null,
+      deletedAt: null,
+    },
+    data: {
+      readAt: now,
+      expiresAt: new Date(now.getTime() + BURN_AFTER_READ_MS),
+    },
+  });
+
   const rows = await prisma.note.findMany({
     where: {
-      spaceId: ctx.membership.spaceId,
+      spaceId,
       parentId: null,
       deletedAt: null,
+      // 双保险：到点的行不渲染（清理失败也不漏）
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
     },
     include: { replies: true },
     orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
@@ -87,6 +128,7 @@ export async function loadNotes(): Promise<{
 export async function createNoteAction(input: {
   body: string;
   parentId?: string | null;
+  burnAfterReading?: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   const ctx = await requirePaired();
   const parsed = noteSchema.safeParse(input);
@@ -103,14 +145,18 @@ export async function createNoteAction(input: {
     });
     if (!parent) return { ok: false, error: "原留言不存在" };
   }
+
+  // P3-T8：阅后即焚信不置顶、不进回收站
   await prisma.note.create({
     data: {
       spaceId: ctx.membership.spaceId,
       authorId: ctx.user.id,
       body: parsed.data.body,
       parentId: parsed.data.parentId ?? null,
+      burn: parsed.data.burnAfterReading || false,
     },
   });
+
   revalidatePath("/us");
   revalidatePath("/us/notes");
   return { ok: true };
@@ -124,6 +170,10 @@ export async function pinNoteAction(
     where: { id, spaceId: ctx.membership.spaceId, parentId: null },
   });
   if (!existing) return { ok: false, error: "留言不存在" };
+  // P3-T8：置顶位与焚毁互斥（不留永久收入的会话也不做永久置顶）
+  if (existing.burn && !existing.pinned) {
+    return { ok: false, error: "阅后即焚的悄悄话不能置顶" };
+  }
 
   if (existing.pinned) {
     await prisma.note.update({
@@ -158,6 +208,13 @@ export async function deleteNoteAction(
   if (!existing) return { ok: false, error: "留言不存在" };
   if (existing.authorId !== ctx.user.id) {
     return { ok: false, error: "只能删除自己的留言" };
+  }
+  // P3-T8：阅后即焚不进回收站（烧掉就是烧掉），直接物理删；其余仍走两段式软删
+  if (existing.burn) {
+    await prisma.note.delete({ where: { id } });
+    revalidatePath("/us");
+    revalidatePath("/us/notes");
+    return { ok: true };
   }
   // P2-N5：两段式删除——软删进回收站，30 天后物理清理
   await prisma.note.update({
